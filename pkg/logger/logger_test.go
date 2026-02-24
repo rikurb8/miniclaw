@@ -92,6 +92,25 @@ func TestLoggerEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func TestLoggerDefaultsToTextFormat(t *testing.T) {
+	unsetLoggingEnv(t)
+
+	var out bytes.Buffer
+	log, err := newWithWriter(config.LoggingConfig{}, &out)
+	if err != nil {
+		t.Fatalf("newWithWriter error: %v", err)
+	}
+
+	log.Info("default format")
+	line := strings.TrimSpace(out.String())
+	if line == "" {
+		t.Fatal("expected log output")
+	}
+	if strings.HasPrefix(line, "{") {
+		t.Fatalf("expected text format by default, got %q", line)
+	}
+}
+
 func unsetLoggingEnv(t *testing.T) {
 	t.Helper()
 	_ = os.Unsetenv("MINICLAW_LOG_LEVEL")

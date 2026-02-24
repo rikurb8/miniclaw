@@ -57,7 +57,7 @@
     "port": 18790
   },
   "logging": {
-    "format": "json",
+    "format": "text",
     "level": "info",
     "add_source": false
   }

@@ -61,6 +61,7 @@ var agentCmd = &cobra.Command{
 		}
 		slog.SetDefault(appLogger)
 		log := agentComponentLogger().With("agent_type", agentType)
+		logStartupConfiguration(log, cfg, prompt)
 
 		if err := runAgentByType(agentType, prompt, cfg, log); err != nil {
 			log.Error("agent runtime failed", "error", err)
@@ -136,6 +137,41 @@ func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger) e
 
 	runInteractive(promptCtx, messageBus)
 	return nil
+}
+
+func logStartupConfiguration(log *slog.Logger, cfg *config.Config, prompt string) {
+	promptMode := "interactive"
+	if strings.TrimSpace(prompt) != "" {
+		promptMode = "single_prompt"
+	}
+
+	log.Info("agent startup",
+		"prompt_mode", promptMode,
+		"provider", cfg.Agents.Defaults.Provider,
+		"model", cfg.Agents.Defaults.Model,
+		"workspace", cfg.Agents.Defaults.Workspace,
+		"restrict_to_workspace", cfg.Agents.Defaults.RestrictToWorkspace,
+		"max_tokens", cfg.Agents.Defaults.MaxTokens,
+		"temperature", cfg.Agents.Defaults.Temperature,
+		"max_tool_iterations", cfg.Agents.Defaults.MaxToolIterations,
+		"heartbeat_enabled", cfg.Heartbeat.Enabled,
+		"heartbeat_interval_seconds", cfg.Heartbeat.Interval,
+	)
+
+	log.Info("logging configuration",
+		"log_format", defaultString(cfg.Logging.Format, "text"),
+		"log_level", defaultString(cfg.Logging.Level, "info"),
+		"log_add_source", cfg.Logging.AddSource,
+	)
+}
+
+func defaultString(value string, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+
+	return strings.ToLower(trimmed)
 }
 
 func resolveAgentType(input string) (string, error) {

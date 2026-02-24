@@ -23,24 +23,35 @@ func (i *Instance) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-i.queueWakeChannel():
+			if err := i.processQueuedPrompts(ctx); err != nil {
+				return err
+			}
 		case <-ticker.C:
-			if err := i.Step(ctx); err != nil {
+			if err := i.processQueuedPrompts(ctx); err != nil {
 				return err
 			}
 		}
 	}
 }
 
+func (i *Instance) processQueuedPrompts(ctx context.Context) error {
+	for {
+		item, ok := i.dequeuePrompt()
+		if !ok {
+			return nil
+		}
+
+		response, err := i.Prompt(ctx, item.prompt)
+		if item.resultCh != nil {
+			item.resultCh <- promptResult{response: response, err: err}
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (i *Instance) Step(ctx context.Context) error {
-	item, ok := i.dequeuePrompt()
-	if !ok {
-		return nil
-	}
-
-	response, err := i.Prompt(ctx, item.prompt)
-	if item.resultCh != nil {
-		item.resultCh <- promptResult{response: response, err: err}
-	}
-
-	return err
+	return i.processQueuedPrompts(ctx)
 }

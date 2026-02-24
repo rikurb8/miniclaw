@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -53,10 +54,15 @@ func New(cfg *config.Config) (*Client, error) {
 func (c *Client) Health(ctx context.Context) error {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+	log := providerLogger().With("operation", "health")
+	startedAt := time.Now()
+	log.Debug("provider request started")
 
 	if _, err := c.client.Models.List(ctx); err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return fmt.Errorf("health check failed: %w", err)
 	}
+	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds())
 
 	return nil
 }
@@ -64,14 +70,20 @@ func (c *Client) Health(ctx context.Context) error {
 func (c *Client) CreateSession(ctx context.Context, title string) (string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+	log := providerLogger().With("operation", "create_session")
+	startedAt := time.Now()
+	log.Debug("provider request started", "title_length", len(strings.TrimSpace(title)))
 
 	conversation, err := c.client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return "", fmt.Errorf("create session failed: %w", err)
 	}
 	if conversation == nil || strings.TrimSpace(conversation.ID) == "" {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "empty conversation id")
 		return "", errors.New("create session returned empty conversation id")
 	}
+	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "session_id", strings.TrimSpace(conversation.ID))
 
 	return strings.TrimSpace(conversation.ID), nil
 }
@@ -79,6 +91,8 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+	log := providerLogger().With("operation", "prompt")
+	startedAt := time.Now()
 
 	_ = agent
 
@@ -94,8 +108,14 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 
 	normalizedModel, err := normalizeModel(model)
 	if err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return "", err
 	}
+	log.Debug("provider request started",
+		"session_id", sessionID,
+		"model", normalizedModel,
+		"prompt_length", len(prompt),
+	)
 
 	response, err := c.client.Responses.New(ctx, responses.ResponseNewParams{
 		Model: normalizedModel,
@@ -105,15 +125,22 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		},
 	})
 	if err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return "", fmt.Errorf("prompt failed: %w", err)
 	}
 
 	text := strings.TrimSpace(response.OutputText())
 	if text == "" {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "no output text")
 		return "", errors.New("prompt succeeded but returned no text")
 	}
+	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "response_length", len(text))
 
 	return text, nil
+}
+
+func providerLogger() *slog.Logger {
+	return slog.Default().With("component", "provider.openai")
 }
 
 func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

@@ -38,13 +38,11 @@ func TestStepConsumesQueuedPrompt(t *testing.T) {
 
 func TestRunProcessesQueuedPrompt(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 60})
 
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}
-
-	inst.EnqueuePrompt("ping")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -54,7 +52,9 @@ func TestRunProcessesQueuedPrompt(t *testing.T) {
 		errCh <- inst.Run(ctx)
 	}()
 
-	deadline := time.Now().Add(2500 * time.Millisecond)
+	inst.EnqueuePrompt("ping")
+
+	deadline := time.Now().Add(1500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		if client.promptCallCount() > 0 {
 			cancel()

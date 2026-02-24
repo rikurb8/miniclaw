@@ -15,6 +15,7 @@ type Instance struct {
 	model     string
 	heartbeat config.HeartbeatConfig
 	memory    *Memory
+	queueWake chan struct{}
 
 	mu        sync.RWMutex
 	sessionID string
@@ -37,6 +38,7 @@ func New(client provider.Client, model string, heartbeat config.HeartbeatConfig)
 		model:     strings.TrimSpace(model),
 		heartbeat: heartbeat,
 		memory:    NewMemory(),
+		queueWake: make(chan struct{}, 1),
 	}
 }
 
@@ -122,6 +124,12 @@ func (i *Instance) enqueuePrompt(prompt string, resultCh chan promptResult) erro
 	defer i.mu.Unlock()
 
 	i.queue = append(i.queue, queuedPrompt{prompt: prompt, resultCh: resultCh})
+	if i.heartbeat.Enabled {
+		select {
+		case i.queueWake <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
@@ -136,4 +144,8 @@ func (i *Instance) dequeuePrompt() (queuedPrompt, bool) {
 	item := i.queue[0]
 	i.queue = i.queue[1:]
 	return item, true
+}
+
+func (i *Instance) queueWakeChannel() <-chan struct{} {
+	return i.queueWake
 }

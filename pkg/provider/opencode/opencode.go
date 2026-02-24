@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -47,20 +48,29 @@ func New(cfg *config.Config) (*Client, error) {
 func (c *Client) Health(ctx context.Context) error {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+	log := providerLogger().With("operation", "health")
+	startedAt := time.Now()
+	log.Debug("provider request started")
 
 	var response healthResponse
 	if err := c.client.Get(ctx, "/global/health", nil, &response); err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return fmt.Errorf("health check failed: %w", err)
 	}
 	if !response.Healthy {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "server unhealthy")
 		return errors.New("opencode server reported unhealthy status")
 	}
+	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "version", response.Version)
 	return nil
 }
 
 func (c *Client) CreateSession(ctx context.Context, title string) (string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+	log := providerLogger().With("operation", "create_session")
+	startedAt := time.Now()
+	log.Debug("provider request started", "title_length", len(strings.TrimSpace(title)))
 
 	params := sdk.SessionNewParams{}
 	if strings.TrimSpace(title) != "" {
@@ -69,11 +79,14 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 
 	session, err := c.client.Session.New(ctx, params)
 	if err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return "", fmt.Errorf("create session failed: %w", err)
 	}
 	if session.ID == "" {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "empty session id")
 		return "", errors.New("create session returned empty session id")
 	}
+	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "session_id", session.ID)
 
 	return session.ID, nil
 }
@@ -81,6 +94,14 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+	log := providerLogger().With("operation", "prompt")
+	startedAt := time.Now()
+	log.Debug("provider request started",
+		"session_id", strings.TrimSpace(sessionID),
+		"model", strings.TrimSpace(model),
+		"agent", strings.TrimSpace(agent),
+		"prompt_length", len(strings.TrimSpace(prompt)),
+	)
 
 	params := sdk.SessionPromptParams{
 		Parts: sdk.F([]sdk.SessionPromptParamsPartUnion{
@@ -104,15 +125,26 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 
 	response, err := c.client.Session.Prompt(ctx, sessionID, params)
 	if err != nil {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return "", fmt.Errorf("prompt failed: %w", err)
 	}
 
 	text := extractText(response.Parts)
 	if text == "" {
+		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "no text parts")
 		return "", errors.New("prompt succeeded but returned no text parts")
 	}
+	log.Debug("provider request completed",
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+		"response_length", len(text),
+		"parts_count", len(response.Parts),
+	)
 
 	return text, nil
+}
+
+func providerLogger() *slog.Logger {
+	return slog.Default().With("component", "provider.opencode")
 }
 
 func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

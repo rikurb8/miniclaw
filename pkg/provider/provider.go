@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"miniclaw/pkg/config"
 	provideropenai "miniclaw/pkg/provider/openai"
@@ -20,6 +21,8 @@ func New(cfg *config.Config) (Client, error) {
 	if providerID == "" {
 		providerID = "opencode"
 	}
+
+	slog.Default().With("component", "provider.factory").Debug("resolving provider client", "provider", providerID)
 
 	switch providerID {
 	case "opencode":

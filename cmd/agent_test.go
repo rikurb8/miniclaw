@@ -301,6 +301,55 @@ func TestLogEventLevels(t *testing.T) {
 	}
 }
 
+func TestLogStartupConfiguration(t *testing.T) {
+	recorder := &recordingHandler{}
+	log := slog.New(recorder)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Provider:            "openai",
+				Model:               "openai/gpt-5.3",
+				Workspace:           "/tmp/workspace",
+				RestrictToWorkspace: true,
+				MaxTokens:           4096,
+				Temperature:         0.2,
+				MaxToolIterations:   12,
+			},
+		},
+		Heartbeat: config.HeartbeatConfig{Enabled: true, Interval: 15},
+		Logging:   config.LoggingConfig{},
+	}
+
+	logStartupConfiguration(log, cfg, "hello")
+
+	if len(recorder.records) != 2 {
+		t.Fatalf("records = %d, want 2", len(recorder.records))
+	}
+
+	startupRecord := recorder.records[0]
+	if startupRecord.Message != "agent startup" {
+		t.Fatalf("startup message = %q, want %q", startupRecord.Message, "agent startup")
+	}
+	if got := recordAttrValue(startupRecord, "prompt_mode"); got != "single_prompt" {
+		t.Fatalf("prompt_mode = %v, want %q", got, "single_prompt")
+	}
+	if got := recordAttrValue(startupRecord, "provider"); got != "openai" {
+		t.Fatalf("provider = %v, want %q", got, "openai")
+	}
+
+	loggingRecord := recorder.records[1]
+	if loggingRecord.Message != "logging configuration" {
+		t.Fatalf("logging message = %q, want %q", loggingRecord.Message, "logging configuration")
+	}
+	if got := recordAttrValue(loggingRecord, "log_format"); got != "text" {
+		t.Fatalf("log_format = %v, want %q", got, "text")
+	}
+	if got := recordAttrValue(loggingRecord, "log_level"); got != "info" {
+		t.Fatalf("log_level = %v, want %q", got, "info")
+	}
+}
+
 type recordingHandler struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -326,4 +375,17 @@ func (h *recordingHandler) LastLevel() slog.Level {
 		return 0
 	}
 	return h.records[len(h.records)-1].Level
+}
+
+func recordAttrValue(record slog.Record, key string) any {
+	var value any
+	record.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == key {
+			value = attr.Value.Any()
+			return false
+		}
+		return true
+	})
+
+	return value
 }

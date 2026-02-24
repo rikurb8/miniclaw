@@ -9,16 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	charmLog "github.com/charmbracelet/log"
 
 	"miniclaw/pkg/config"
 )
 
 const (
-	defaultFormat = "json"
+	defaultFormat = "text"
 	defaultLevel  = "info"
 )
 
@@ -32,7 +33,6 @@ type LogEntry struct {
 }
 
 type entryHandler struct {
-	format    string
 	level     slog.Level
 	addSource bool
 	writer    io.Writer
@@ -68,14 +68,36 @@ func newWithWriter(cfg config.LoggingConfig, writer io.Writer) (*slog.Logger, er
 	}
 
 	h := &entryHandler{
-		format:    format,
 		level:     level,
 		addSource: addSource,
 		writer:    writer,
 		mu:        &sync.Mutex{},
 	}
 
+	if format == "text" {
+		pretty := charmLog.NewWithOptions(writer, charmLog.Options{
+			Level:           charmLevel(level),
+			ReportTimestamp: true,
+			ReportCaller:    addSource,
+			Formatter:       charmLog.TextFormatter,
+		})
+		return slog.New(pretty), nil
+	}
+
 	return slog.New(h), nil
+}
+
+func charmLevel(level slog.Level) charmLog.Level {
+	switch {
+	case level <= slog.LevelDebug:
+		return charmLog.DebugLevel
+	case level <= slog.LevelInfo:
+		return charmLog.InfoLevel
+	case level <= slog.LevelWarn:
+		return charmLog.WarnLevel
+	default:
+		return charmLog.ErrorLevel
+	}
 }
 
 func parseLevel(input string) (slog.Level, error) {
@@ -143,7 +165,7 @@ func (h *entryHandler) Handle(_ context.Context, record slog.Record) error {
 		entry.Caller = callerFromRecord(record)
 	}
 
-	line, err := h.render(entry)
+	line, err := json.Marshal(entry)
 	if err != nil {
 		return err
 	}
@@ -228,36 +250,4 @@ func (h *entryHandler) WithGroup(name string) slog.Handler {
 	next := *h
 	next.groups = append(append([]string{}, h.groups...), name)
 	return &next
-}
-
-func (h *entryHandler) render(entry LogEntry) ([]byte, error) {
-	if h.format == "json" {
-		return json.Marshal(entry)
-	}
-
-	return []byte(renderText(entry)), nil
-}
-
-func renderText(entry LogEntry) string {
-	parts := []string{entry.Timestamp, strings.ToUpper(entry.Level)}
-	if entry.Component != "" {
-		parts = append(parts, "component="+entry.Component)
-	}
-	if entry.Caller != "" {
-		parts = append(parts, "caller="+entry.Caller)
-	}
-	parts = append(parts, entry.Message)
-
-	if len(entry.Fields) > 0 {
-		keys := make([]string, 0, len(entry.Fields))
-		for key := range entry.Fields {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			parts = append(parts, fmt.Sprintf("%s=%v", key, entry.Fields[key]))
-		}
-	}
-
-	return strings.Join(parts, " ")
 }
