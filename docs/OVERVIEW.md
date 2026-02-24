@@ -12,6 +12,7 @@ Agent behavior is selected by `agents.defaults.type`:
 
 - `generic-agent` (default) runs MiniClaw's local runtime flow.
 - `opencode-agent` is a separate runtime mode for OpenCode-backed orchestration.
+- `fantasy-agent` runs prompts through `charm.land/fantasy` (currently with OpenAI provider support).
 
 ## Architecture (High Level)
 

@@ -90,7 +90,9 @@ func TestResolveAgentType(t *testing.T) {
 		{name: "defaults to generic", input: "", want: agentTypeGeneric},
 		{name: "generic explicit", input: "generic-agent", want: agentTypeGeneric},
 		{name: "opencode explicit", input: "opencode-agent", want: agentTypeOpenCode},
+		{name: "fantasy explicit", input: "fantasy-agent", want: agentTypeFantasy},
 		{name: "trim and lowercase", input: "  OpEnCoDe-AgEnT  ", want: agentTypeOpenCode},
+		{name: "trim and lowercase fantasy", input: "  FaNtAsY-AgEnT  ", want: agentTypeFantasy},
 		{name: "invalid type", input: "unknown", wantErr: true},
 	}
 

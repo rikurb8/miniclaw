@@ -1,10 +1,10 @@
 {
   "agents": {
     "defaults": {
-      "type": "generic-agent",
+      "type": "fantasy-agent",
       "workspace": "~/.miniclaw/workspace",
       "restrict_to_workspace": true,
-      "provider": "opencode",
+      "provider": "openai",
       "model": "openai/gpt-5.2",
       "max_tokens": 8192,
       "temperature": 0.7,

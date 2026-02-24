@@ -18,6 +18,7 @@ import (
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/logger"
 	"miniclaw/pkg/provider"
+	providerfantasy "miniclaw/pkg/provider/fantasy"
 	"miniclaw/pkg/ui/chat"
 
 	"github.com/spf13/cobra"
@@ -32,6 +33,7 @@ const (
 	cliSessionKey     = "local"
 	agentTypeGeneric  = "generic-agent"
 	agentTypeOpenCode = "opencode-agent"
+	agentTypeFantasy  = "fantasy-agent"
 )
 
 // agentCmd represents the agent command
@@ -77,6 +79,8 @@ func runAgentByType(agentType string, prompt string, cfg *config.Config, log *sl
 		return runGenericAgent(prompt, cfg, log)
 	case agentTypeOpenCode:
 		return runOpenCodeAgent(prompt, cfg, log)
+	case agentTypeFantasy:
+		return runFantasyAgent(prompt, cfg, log)
 	default:
 		return fmt.Errorf("unsupported agent type: %s", agentType)
 	}
@@ -90,12 +94,25 @@ func runOpenCodeAgent(prompt string, cfg *config.Config, log *slog.Logger) error
 	return runLocalAgentRuntime(prompt, cfg, log)
 }
 
+func runFantasyAgent(prompt string, cfg *config.Config, log *slog.Logger) error {
+	client, err := providerfantasy.New(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize fantasy provider: %w", err)
+	}
+
+	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client)
+}
+
 func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger) error {
 	client, err := provider.New(cfg)
 	if err != nil {
 		return fmt.Errorf("initialize provider: %w", err)
 	}
 
+	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client)
+}
+
+func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog.Logger, client provider.Client) error {
 	runtime := agent.New(client, cfg.Agents.Defaults.Model, cfg.Heartbeat)
 
 	ctx := context.Background()
@@ -187,7 +204,7 @@ func resolveAgentType(input string) (string, error) {
 	}
 
 	switch value {
-	case agentTypeGeneric, agentTypeOpenCode:
+	case agentTypeGeneric, agentTypeOpenCode, agentTypeFantasy:
 		return value, nil
 	default:
 		return "", fmt.Errorf("unsupported agent type: %s", input)
