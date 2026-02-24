@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"miniclaw/pkg/agent"
+	"miniclaw/pkg/bus"
 	"miniclaw/pkg/config"
 )
 
@@ -242,4 +245,51 @@ func TestExecutePromptPropagatesError(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want %v", err, wantErr)
 	}
+}
+
+func TestLogEventLevels(t *testing.T) {
+	recorder := &recordingHandler{}
+	log := slog.New(recorder)
+
+	logEvent(log, bus.Event{Type: bus.EventPromptReceived, RequestID: "1"})
+	if got := recorder.LastLevel(); got != slog.LevelInfo {
+		t.Fatalf("received event level = %v, want %v", got, slog.LevelInfo)
+	}
+
+	logEvent(log, bus.Event{Type: bus.EventPromptCompleted, RequestID: "2"})
+	if got := recorder.LastLevel(); got != slog.LevelInfo {
+		t.Fatalf("completed event level = %v, want %v", got, slog.LevelInfo)
+	}
+
+	logEvent(log, bus.Event{Type: bus.EventPromptFailed, RequestID: "3", Error: "boom"})
+	if got := recorder.LastLevel(); got != slog.LevelError {
+		t.Fatalf("failed event level = %v, want %v", got, slog.LevelError)
+	}
+}
+
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+
+func (h *recordingHandler) WithGroup(_ string) slog.Handler { return h }
+
+func (h *recordingHandler) LastLevel() slog.Level {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.records) == 0 {
+		return 0
+	}
+	return h.records[len(h.records)-1].Level
 }

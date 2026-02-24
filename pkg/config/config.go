@@ -17,6 +17,13 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	Gateway   GatewayConfig   `json:"gateway"`
+	Logging   LoggingConfig   `json:"logging,omitempty"`
+}
+
+type LoggingConfig struct {
+	Format    string `json:"format,omitempty"`
+	Level     string `json:"level,omitempty"`
+	AddSource bool   `json:"add_source,omitempty"`
 }
 
 type AgentsConfig struct {

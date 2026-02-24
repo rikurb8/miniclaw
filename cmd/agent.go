@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"miniclaw/pkg/agent"
 	"miniclaw/pkg/bus"
 	"miniclaw/pkg/config"
+	"miniclaw/pkg/logger"
 	"miniclaw/pkg/provider"
 
 	"github.com/spf13/cobra"
@@ -44,9 +46,17 @@ var agentCmd = &cobra.Command{
 			return
 		}
 
+		appLogger, err := logger.New(cfg.Logging)
+		if err != nil {
+			fmt.Printf("failed to initialize logger: %v\n", err)
+			return
+		}
+		slog.SetDefault(appLogger)
+		log := agentComponentLogger()
+
 		client, err := provider.New(cfg)
 		if err != nil {
-			fmt.Printf("failed to initialize provider: %v\n", err)
+			log.Error("failed to initialize provider", "error", err)
 			return
 		}
 
@@ -54,9 +64,10 @@ var agentCmd = &cobra.Command{
 
 		ctx := context.Background()
 		if err := runtime.StartSession(ctx, "miniclaw"); err != nil {
-			fmt.Printf("failed to start session: %v\n", err)
+			log.Error("failed to start session", "error", err)
 			return
 		}
+		log.Info("session started")
 
 		promptCtx := ctx
 		cancelLoop := func() {}
@@ -72,7 +83,7 @@ var agentCmd = &cobra.Command{
 			select {
 			case loopErr := <-loopErrCh:
 				if loopErr != nil {
-					fmt.Printf("heartbeat loop failed: %v\n", loopErr)
+					log.Error("heartbeat loop failed", "error", loopErr)
 				}
 			default:
 			}
@@ -120,7 +131,7 @@ func resolvePrompt(args []string) string {
 func runSinglePrompt(ctx context.Context, messageBus *bus.MessageBus, prompt string) {
 	response, err := executePromptViaBus(ctx, messageBus, prompt)
 	if err != nil {
-		fmt.Printf("prompt failed: %v\n", err)
+		agentComponentLogger().Error("prompt failed", "error", err)
 		return
 	}
 
@@ -134,7 +145,7 @@ func runInteractive(ctx context.Context, messageBus *bus.MessageBus) {
 		fmt.Print("👨🏻 ")
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
-				fmt.Printf("input error: %v\n", err)
+				agentComponentLogger().Error("interactive input error", "error", err)
 			}
 			return
 		}
@@ -149,7 +160,7 @@ func runInteractive(ctx context.Context, messageBus *bus.MessageBus) {
 
 		response, err := executePromptViaBus(ctx, messageBus, prompt)
 		if err != nil {
-			fmt.Printf("prompt failed: %v\n", err)
+			agentComponentLogger().Error("prompt failed", "error", err)
 			continue
 		}
 
@@ -255,6 +266,7 @@ func executePromptViaBus(ctx context.Context, messageBus *bus.MessageBus, prompt
 }
 
 func observeAgentEvents(ctx context.Context, messageBus *bus.MessageBus) {
+	log := slog.Default().With("component", "bus.events")
 	events, unsubscribe := messageBus.SubscribeEvents(ctx, 32)
 	defer unsubscribe()
 
@@ -262,11 +274,41 @@ func observeAgentEvents(ctx context.Context, messageBus *bus.MessageBus) {
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-events:
+		case event, ok := <-events:
 			if !ok {
 				return
 			}
+			logEvent(log, event)
 		}
+	}
+}
+
+func agentComponentLogger() *slog.Logger {
+	return slog.Default().With("component", "cmd.agent")
+}
+
+func logEvent(log *slog.Logger, event bus.Event) {
+	attrs := []any{
+		"event_type", event.Type,
+		"request_id", event.RequestID,
+		"channel", event.Channel,
+		"chat_id", event.ChatID,
+		"session_key", event.SessionKey,
+		"timestamp", event.At.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
+	}
+	if len(event.Payload) > 0 {
+		attrs = append(attrs, "payload", event.Payload)
+	}
+
+	switch event.Type {
+	case bus.EventPromptFailed:
+		log.Error("prompt event", append(attrs, "error", event.Error)...)
+	case bus.EventPromptReceived:
+		log.Info("prompt event", attrs...)
+	case bus.EventPromptCompleted:
+		log.Info("prompt event", attrs...)
+	default:
+		log.Debug("prompt event", attrs...)
 	}
 }
 
