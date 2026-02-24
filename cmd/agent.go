@@ -6,11 +6,15 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"miniclaw/pkg/agent"
+	"miniclaw/pkg/bus"
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/provider"
 
@@ -18,6 +22,13 @@ import (
 )
 
 var promptText string
+var promptRequestCounter atomic.Uint64
+
+const (
+	cliChannelName = "cli"
+	cliChatID      = "local"
+	cliSessionKey  = "local"
+)
 
 // agentCmd represents the agent command
 var agentCmd = &cobra.Command{
@@ -67,12 +78,20 @@ var agentCmd = &cobra.Command{
 			}
 		}()
 
+		messageBus := bus.NewMessageBus()
+		defer messageBus.Close()
+
+		workerCtx, cancelWorker := context.WithCancel(promptCtx)
+		defer cancelWorker()
+		go runAgentBusWorker(workerCtx, runtime, messageBus)
+		go observeAgentEvents(workerCtx, messageBus)
+
 		if prompt != "" {
-			runSinglePrompt(promptCtx, runtime, prompt)
+			runSinglePrompt(promptCtx, messageBus, prompt)
 			return
 		}
 
-		runInteractive(promptCtx, runtime)
+		runInteractive(promptCtx, messageBus)
 	},
 }
 
@@ -98,8 +117,8 @@ func resolvePrompt(args []string) string {
 	return value
 }
 
-func runSinglePrompt(ctx context.Context, runtime *agent.Instance, prompt string) {
-	response, err := executePrompt(ctx, runtime, prompt)
+func runSinglePrompt(ctx context.Context, messageBus *bus.MessageBus, prompt string) {
+	response, err := executePromptViaBus(ctx, messageBus, prompt)
 	if err != nil {
 		fmt.Printf("prompt failed: %v\n", err)
 		return
@@ -108,7 +127,7 @@ func runSinglePrompt(ctx context.Context, runtime *agent.Instance, prompt string
 	fmt.Println(response)
 }
 
-func runInteractive(ctx context.Context, runtime *agent.Instance) {
+func runInteractive(ctx context.Context, messageBus *bus.MessageBus) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -128,7 +147,7 @@ func runInteractive(ctx context.Context, runtime *agent.Instance) {
 			return
 		}
 
-		response, err := executePrompt(ctx, runtime, prompt)
+		response, err := executePromptViaBus(ctx, messageBus, prompt)
 		if err != nil {
 			fmt.Printf("prompt failed: %v\n", err)
 			continue
@@ -144,6 +163,111 @@ func executePrompt(ctx context.Context, runtime *agent.Instance, prompt string) 
 	}
 
 	return runtime.Prompt(ctx, prompt)
+}
+
+func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus *bus.MessageBus) {
+	for {
+		inbound, ok := messageBus.ConsumeInbound(ctx)
+		if !ok {
+			return
+		}
+
+		requestID := inbound.Metadata["request_id"]
+		_ = messageBus.PublishEvent(ctx, bus.Event{
+			Type:       bus.EventPromptReceived,
+			Channel:    inbound.Channel,
+			ChatID:     inbound.ChatID,
+			SessionKey: inbound.SessionKey,
+			RequestID:  requestID,
+			Payload: map[string]string{
+				"prompt_length": strconv.Itoa(len(inbound.Content)),
+			},
+		})
+
+		response, err := executePrompt(ctx, runtime, inbound.Content)
+		outbound := bus.OutboundMessage{
+			Channel:    inbound.Channel,
+			ChatID:     inbound.ChatID,
+			SessionKey: inbound.SessionKey,
+			Content:    response,
+		}
+		if err != nil {
+			outbound.Error = err.Error()
+			_ = messageBus.PublishEvent(ctx, bus.Event{
+				Type:       bus.EventPromptFailed,
+				Channel:    inbound.Channel,
+				ChatID:     inbound.ChatID,
+				SessionKey: inbound.SessionKey,
+				RequestID:  requestID,
+				Error:      err.Error(),
+			})
+		} else {
+			_ = messageBus.PublishEvent(ctx, bus.Event{
+				Type:       bus.EventPromptCompleted,
+				Channel:    inbound.Channel,
+				ChatID:     inbound.ChatID,
+				SessionKey: inbound.SessionKey,
+				RequestID:  requestID,
+				Payload: map[string]string{
+					"response_length": strconv.Itoa(len(response)),
+				},
+			})
+		}
+
+		if ok := messageBus.PublishOutbound(ctx, outbound); !ok {
+			return
+		}
+	}
+}
+
+func executePromptViaBus(ctx context.Context, messageBus *bus.MessageBus, prompt string) (string, error) {
+	requestID := strconv.FormatUint(promptRequestCounter.Add(1), 10)
+	inbound := bus.InboundMessage{
+		Channel:    cliChannelName,
+		ChatID:     cliChatID,
+		SessionKey: cliSessionKey,
+		Content:    prompt,
+		Metadata: map[string]string{
+			"request_id": requestID,
+		},
+	}
+
+	if ok := messageBus.PublishInbound(ctx, inbound); !ok {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		return "", errors.New("unable to enqueue prompt")
+	}
+
+	outbound, ok := messageBus.SubscribeOutbound(ctx)
+	if !ok {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		return "", errors.New("unable to receive prompt result")
+	}
+
+	if outbound.Error != "" {
+		return "", errors.New(outbound.Error)
+	}
+
+	return outbound.Content, nil
+}
+
+func observeAgentEvents(ctx context.Context, messageBus *bus.MessageBus) {
+	events, unsubscribe := messageBus.SubscribeEvents(ctx, 32)
+	defer unsubscribe()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+		}
+	}
 }
 
 func printAssistantMessage(message string) {
