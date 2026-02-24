@@ -4,7 +4,6 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/logger"
 	"miniclaw/pkg/provider"
+	"miniclaw/pkg/ui/chat"
 
 	"github.com/spf13/cobra"
 )
@@ -61,7 +61,9 @@ var agentCmd = &cobra.Command{
 		}
 		slog.SetDefault(appLogger)
 		log := agentComponentLogger().With("agent_type", agentType)
-		logStartupConfiguration(log, cfg, prompt)
+		if shouldShowRuntimeLogs(cfg.Logging.Level) {
+			logStartupConfiguration(log, cfg, prompt)
+		}
 
 		if err := runAgentByType(agentType, prompt, cfg, log); err != nil {
 			log.Error("agent runtime failed", "error", err)
@@ -100,7 +102,9 @@ func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger) e
 	if err := runtime.StartSession(ctx, "miniclaw"); err != nil {
 		return fmt.Errorf("start session: %w", err)
 	}
-	log.Info("session started")
+	if shouldShowRuntimeLogs(cfg.Logging.Level) {
+		log.Info("session started")
+	}
 
 	promptCtx := ctx
 	cancelLoop := func() {}
@@ -128,7 +132,9 @@ func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger) e
 	workerCtx, cancelWorker := context.WithCancel(promptCtx)
 	defer cancelWorker()
 	go runAgentBusWorker(workerCtx, runtime, messageBus)
-	go observeAgentEvents(workerCtx, messageBus)
+	if shouldShowRuntimeLogs(cfg.Logging.Level) {
+		go observeAgentEvents(workerCtx, messageBus)
+	}
 
 	if prompt != "" {
 		runSinglePrompt(promptCtx, messageBus, prompt)
@@ -211,42 +217,22 @@ func resolvePrompt(args []string) string {
 }
 
 func runSinglePrompt(ctx context.Context, messageBus *bus.MessageBus, prompt string) {
-	response, err := executePromptViaBus(ctx, messageBus, prompt)
-	if err != nil {
-		agentComponentLogger().Error("prompt failed", "error", err)
-		return
+	promptFn := func(runCtx context.Context, text string) (string, error) {
+		return executePromptViaBus(runCtx, messageBus, text)
 	}
 
-	fmt.Println(response)
+	if err := chat.RunOneShot(ctx, promptFn, prompt); err != nil {
+		agentComponentLogger().Error("one-shot ui failed", "error", err)
+	}
 }
 
 func runInteractive(ctx context.Context, messageBus *bus.MessageBus) {
-	scanner := bufio.NewScanner(os.Stdin)
+	promptFn := func(runCtx context.Context, text string) (string, error) {
+		return executePromptViaBus(runCtx, messageBus, text)
+	}
 
-	for {
-		fmt.Print("👨🏻 ")
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				agentComponentLogger().Error("interactive input error", "error", err)
-			}
-			return
-		}
-
-		prompt := strings.TrimSpace(scanner.Text())
-		if prompt == "" {
-			continue
-		}
-		if isExitCommand(prompt) {
-			return
-		}
-
-		response, err := executePromptViaBus(ctx, messageBus, prompt)
-		if err != nil {
-			agentComponentLogger().Error("prompt failed", "error", err)
-			continue
-		}
-
-		printAssistantMessage(response)
+	if err := chat.RunInteractive(ctx, promptFn); err != nil {
+		agentComponentLogger().Error("interactive ui failed", "error", err)
 	}
 }
 
@@ -420,4 +406,13 @@ func isExitCommand(input string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldShowRuntimeLogs(level string) bool {
+	value := strings.ToLower(strings.TrimSpace(level))
+	if value == "" {
+		value = strings.ToLower(strings.TrimSpace(os.Getenv("MINICLAW_LOG_LEVEL")))
+	}
+
+	return value == "debug"
 }
