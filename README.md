@@ -7,6 +7,13 @@ Experimental AI assistant project, work in progress
 
 For a high-level architecture and key concepts walkthrough, see `docs/OVERVIEW.md`.
 
+## Agent types
+
+MiniClaw supports configurable agent runtimes through `agents.defaults.type`:
+
+- `generic-agent` (default): local MiniClaw runtime flow.
+- `opencode-agent`: reserved runtime mode for OpenCode-backed orchestration.
+
 ## OpenCode provider (first supported provider)
 
 MiniClaw currently supports connecting to a running OpenCode server using
@@ -38,4 +45,28 @@ go run . agent --prompt "hello from miniclaw"
 
 ```bash
 go run . agent
+```
+
+## OpenAI provider
+
+MiniClaw also supports OpenAI via `github.com/openai/openai-go/v3`.
+
+### Quickstart
+
+1. Set your API key:
+
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+2. In `config/config.json`, set:
+
+- `agents.defaults.provider` to `openai`
+- `providers.openai.api_key_env` to `OPENAI_API_KEY`
+- `agents.defaults.model` to an OpenAI model (for example `openai/gpt-5.2` or `gpt-5.2`)
+
+3. Run:
+
+```bash
+go run . agent --prompt "hello from openai provider"
 ```

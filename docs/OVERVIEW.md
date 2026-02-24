@@ -6,7 +6,12 @@ Think of it as a thin coordinator between three things:
 
 - user input from the CLI,
 - a runtime that manages session + state,
-- an external model provider (currently OpenCode).
+- an external model provider (currently OpenCode and OpenAI).
+
+Agent behavior is selected by `agents.defaults.type`:
+
+- `generic-agent` (default) runs MiniClaw's local runtime flow.
+- `opencode-agent` is a separate runtime mode for OpenCode-backed orchestration.
 
 ## Architecture (High Level)
 
@@ -32,7 +37,7 @@ Provider Interface (pkg/provider/*)
   - Prompt
   |
   v
-OpenCode Server (current implementation)
+Provider backend (OpenCode/OpenAI)
 ```
 
 ## Key Concepts
@@ -94,6 +99,7 @@ With heartbeat enabled, `enqueue prompt` happens first and provider call is done
 
 For understanding runtime behavior, focus on:
 
+- `agents.defaults.type`
 - `agents.defaults.provider`
 - `agents.defaults.model`
 - `providers.opencode.*`

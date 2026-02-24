@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"miniclaw/pkg/config"
+	provideropenai "miniclaw/pkg/provider/openai"
 	provideropencode "miniclaw/pkg/provider/opencode"
 )
 
@@ -28,5 +29,21 @@ func TestNewReturnsErrorForUnsupportedProvider(t *testing.T) {
 	_, err := New(cfg)
 	if err == nil {
 		t.Fatal("expected error for unsupported provider")
+	}
+}
+
+func TestNewReturnsOpenAIProvider(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	cfg := &config.Config{}
+	cfg.Agents.Defaults.Provider = "openai"
+
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if _, ok := client.(*provideropenai.Client); !ok {
+		t.Fatalf("expected *openai.Client, got %T", client)
 	}
 }

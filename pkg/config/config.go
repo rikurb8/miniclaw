@@ -31,6 +31,7 @@ type AgentsConfig struct {
 }
 
 type AgentDefaults struct {
+	Type                string  `json:"type"`
 	Workspace           string  `json:"workspace"`
 	RestrictToWorkspace bool    `json:"restrict_to_workspace"`
 	Provider            string  `json:"provider"`
@@ -42,12 +43,21 @@ type AgentDefaults struct {
 
 type ProvidersConfig struct {
 	OpenCode OpenCodeProviderConfig `json:"opencode"`
+	OpenAI   OpenAIProviderConfig   `json:"openai"`
 }
 
 type OpenCodeProviderConfig struct {
 	BaseURL               string `json:"base_url"`
 	Username              string `json:"username"`
 	PasswordEnv           string `json:"password_env"`
+	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
+}
+
+type OpenAIProviderConfig struct {
+	APIKeyEnv             string `json:"api_key_env"`
+	BaseURL               string `json:"base_url"`
+	Organization          string `json:"organization"`
+	Project               string `json:"project"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 }
 

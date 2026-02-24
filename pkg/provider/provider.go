@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"miniclaw/pkg/config"
+	provideropenai "miniclaw/pkg/provider/openai"
 	"miniclaw/pkg/provider/opencode"
 )
 
@@ -23,6 +24,8 @@ func New(cfg *config.Config) (Client, error) {
 	switch providerID {
 	case "opencode":
 		return opencode.New(cfg)
+	case "openai":
+		return provideropenai.New(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", providerID)
 	}

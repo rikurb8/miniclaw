@@ -1,6 +1,7 @@
 {
   "agents": {
     "defaults": {
+      "type": "generic-agent",
       "workspace": "~/.miniclaw/workspace",
       "restrict_to_workspace": true,
       "provider": "opencode",
@@ -33,6 +34,13 @@
       "base_url": "http://127.0.0.1:4096",
       "username": "opencode",
       "password_env": "OPENCODE_SERVER_PASSWORD",
+      "request_timeout_seconds": 120
+    },
+    "openai": {
+      "api_key_env": "OPENAI_API_KEY",
+      "base_url": "",
+      "organization": "",
+      "project": "",
       "request_timeout_seconds": 120
     }
   },

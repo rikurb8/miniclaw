@@ -10,7 +10,7 @@ func TestLoadConfigFromEnvPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	content := `{
-	  "agents": {"defaults": {"model": "openai/gpt-5.2"}},
+	  "agents": {"defaults": {"type": "generic-agent", "model": "openai/gpt-5.2"}},
 	  "channels": {"telegram": {}},
 	  "providers": {"opencode": {"base_url": "http://127.0.0.1:4096"}},
 	  "heartbeat": {"enabled": true, "interval": 30},
@@ -37,6 +37,9 @@ func TestLoadConfigFromEnvPath(t *testing.T) {
 	}
 	if !cfg.Logging.AddSource {
 		t.Fatal("logging.add_source = false, want true")
+	}
+	if cfg.Agents.Defaults.Type != "generic-agent" {
+		t.Fatalf("agents.defaults.type = %q, want %q", cfg.Agents.Defaults.Type, "generic-agent")
 	}
 }
 

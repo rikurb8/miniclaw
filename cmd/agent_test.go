@@ -80,6 +80,40 @@ func TestResolvePrompt(t *testing.T) {
 	}
 }
 
+func TestResolveAgentType(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "defaults to generic", input: "", want: agentTypeGeneric},
+		{name: "generic explicit", input: "generic-agent", want: agentTypeGeneric},
+		{name: "opencode explicit", input: "opencode-agent", want: agentTypeOpenCode},
+		{name: "trim and lowercase", input: "  OpEnCoDe-AgEnT  ", want: agentTypeOpenCode},
+		{name: "invalid type", input: "unknown", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveAgentType(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveAgentType(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("resolveAgentType(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunAgentByTypeRejectsUnsupportedType(t *testing.T) {
+	err := runAgentByType("unknown-agent", "", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unsupported agent type")
+	}
+}
+
 func TestPrintAssistantMessage(t *testing.T) {
 	output := captureStdout(t, func() {
 		printAssistantMessage("first\nsecond")
