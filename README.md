@@ -3,6 +3,10 @@
 
 Experimental AI assistant project, work in progress
 
+## Documentation
+
+For a high-level architecture and key concepts walkthrough, see `docs/OVERVIEW.md`.
+
 ## OpenCode provider (first supported provider)
 
 MiniClaw currently supports connecting to a running OpenCode server using
