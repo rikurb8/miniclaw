@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"miniclaw/pkg/agent"
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/provider"
 
@@ -38,24 +39,40 @@ var agentCmd = &cobra.Command{
 			return
 		}
 
+		runtime := agent.New(client, cfg.Agents.Defaults.Model, cfg.Heartbeat)
+
 		ctx := context.Background()
-		if err := client.Health(ctx); err != nil {
-			fmt.Printf("provider health check failed: %v\n", err)
+		if err := runtime.StartSession(ctx, "miniclaw"); err != nil {
+			fmt.Printf("failed to start session: %v\n", err)
 			return
 		}
 
-		sessionID, err := client.CreateSession(ctx, "miniclaw")
-		if err != nil {
-			fmt.Printf("failed to create session: %v\n", err)
-			return
+		promptCtx := ctx
+		cancelLoop := func() {}
+		loopErrCh := make(chan error, 1)
+		if runtime.HeartbeatEnabled() {
+			promptCtx, cancelLoop = context.WithCancel(ctx)
+			go func() {
+				loopErrCh <- runtime.Run(promptCtx)
+			}()
 		}
+		defer func() {
+			cancelLoop()
+			select {
+			case loopErr := <-loopErrCh:
+				if loopErr != nil {
+					fmt.Printf("heartbeat loop failed: %v\n", loopErr)
+				}
+			default:
+			}
+		}()
 
 		if prompt != "" {
-			runSinglePrompt(ctx, client, sessionID, cfg.Agents.Defaults.Model, prompt)
+			runSinglePrompt(promptCtx, runtime, prompt)
 			return
 		}
 
-		runInteractive(ctx, client, sessionID, cfg.Agents.Defaults.Model)
+		runInteractive(promptCtx, runtime)
 	},
 }
 
@@ -81,8 +98,8 @@ func resolvePrompt(args []string) string {
 	return value
 }
 
-func runSinglePrompt(ctx context.Context, client provider.Client, sessionID string, model string, prompt string) {
-	response, err := client.Prompt(ctx, sessionID, prompt, model, "")
+func runSinglePrompt(ctx context.Context, runtime *agent.Instance, prompt string) {
+	response, err := executePrompt(ctx, runtime, prompt)
 	if err != nil {
 		fmt.Printf("prompt failed: %v\n", err)
 		return
@@ -91,7 +108,7 @@ func runSinglePrompt(ctx context.Context, client provider.Client, sessionID stri
 	fmt.Println(response)
 }
 
-func runInteractive(ctx context.Context, client provider.Client, sessionID string, model string) {
+func runInteractive(ctx context.Context, runtime *agent.Instance) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -111,7 +128,7 @@ func runInteractive(ctx context.Context, client provider.Client, sessionID strin
 			return
 		}
 
-		response, err := client.Prompt(ctx, sessionID, prompt, model, "")
+		response, err := executePrompt(ctx, runtime, prompt)
 		if err != nil {
 			fmt.Printf("prompt failed: %v\n", err)
 			continue
@@ -119,6 +136,14 @@ func runInteractive(ctx context.Context, client provider.Client, sessionID strin
 
 		printAssistantMessage(response)
 	}
+}
+
+func executePrompt(ctx context.Context, runtime *agent.Instance, prompt string) (string, error) {
+	if runtime.HeartbeatEnabled() {
+		return runtime.EnqueueAndWait(ctx, prompt)
+	}
+
+	return runtime.Prompt(ctx, prompt)
 }
 
 func printAssistantMessage(message string) {
