@@ -12,6 +12,7 @@ type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	ModelList []ModelConfig   `json:"model_list"`
 	Channels  ChannelsConfig  `json:"channels"`
+	Providers ProvidersConfig `json:"providers"`
 	Tools     ToolsConfig     `json:"tools,omitempty"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
@@ -25,10 +26,22 @@ type AgentsConfig struct {
 type AgentDefaults struct {
 	Workspace           string  `json:"workspace"`
 	RestrictToWorkspace bool    `json:"restrict_to_workspace"`
+	Provider            string  `json:"provider"`
 	Model               string  `json:"model"`
 	MaxTokens           int     `json:"max_tokens"`
 	Temperature         float64 `json:"temperature"`
 	MaxToolIterations   int     `json:"max_tool_iterations"`
+}
+
+type ProvidersConfig struct {
+	OpenCode OpenCodeProviderConfig `json:"opencode"`
+}
+
+type OpenCodeProviderConfig struct {
+	BaseURL               string `json:"base_url"`
+	Username              string `json:"username"`
+	PasswordEnv           string `json:"password_env"`
+	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 }
 
 type ModelConfig struct {
