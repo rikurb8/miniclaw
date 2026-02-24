@@ -4,8 +4,10 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"miniclaw/pkg/config"
@@ -19,14 +21,10 @@ var promptText string
 // agentCmd represents the agent command
 var agentCmd = &cobra.Command{
 	Use:   "agent [prompt]",
-	Short: "Send a prompt through the configured provider",
-	Long:  "Loads MiniClaw configuration, connects to the configured provider, and sends one prompt.",
+	Short: "Send a prompt or start an interactive chat",
+	Long:  "Loads MiniClaw configuration, connects to the configured provider, and sends one prompt or starts an interactive chat.",
 	Run: func(cmd *cobra.Command, args []string) {
 		prompt := resolvePrompt(args)
-		if prompt == "" {
-			fmt.Println("prompt is required (use --prompt or pass text as an argument)")
-			return
-		}
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -52,13 +50,12 @@ var agentCmd = &cobra.Command{
 			return
 		}
 
-		response, err := client.Prompt(ctx, sessionID, prompt, cfg.Agents.Defaults.Model, "")
-		if err != nil {
-			fmt.Printf("prompt failed: %v\n", err)
+		if prompt != "" {
+			runSinglePrompt(ctx, client, sessionID, cfg.Agents.Defaults.Model, prompt)
 			return
 		}
 
-		fmt.Println(response)
+		runInteractive(ctx, client, sessionID, cfg.Agents.Defaults.Model)
 	},
 }
 
@@ -82,4 +79,72 @@ func resolvePrompt(args []string) string {
 	}
 
 	return value
+}
+
+func runSinglePrompt(ctx context.Context, client provider.Client, sessionID string, model string, prompt string) {
+	response, err := client.Prompt(ctx, sessionID, prompt, model, "")
+	if err != nil {
+		fmt.Printf("prompt failed: %v\n", err)
+		return
+	}
+
+	fmt.Println(response)
+}
+
+func runInteractive(ctx context.Context, client provider.Client, sessionID string, model string) {
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for {
+		fmt.Print("👨🏻 ")
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				fmt.Printf("input error: %v\n", err)
+			}
+			return
+		}
+
+		prompt := strings.TrimSpace(scanner.Text())
+		if prompt == "" {
+			continue
+		}
+		if isExitCommand(prompt) {
+			return
+		}
+
+		response, err := client.Prompt(ctx, sessionID, prompt, model, "")
+		if err != nil {
+			fmt.Printf("prompt failed: %v\n", err)
+			continue
+		}
+
+		printAssistantMessage(response)
+	}
+}
+
+func printAssistantMessage(message string) {
+	lines := assistantLines(message)
+	for _, line := range lines {
+		fmt.Printf("🦞 %s\n", line)
+	}
+	if len(lines) > 0 {
+		fmt.Println()
+	}
+}
+
+func assistantLines(message string) []string {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return nil
+	}
+
+	return strings.Split(trimmed, "\n")
+}
+
+func isExitCommand(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "exit", "quit", ":q":
+		return true
+	default:
+		return false
+	}
 }

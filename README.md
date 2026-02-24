@@ -24,8 +24,14 @@ opencode serve --port 4096 --hostname 127.0.0.1
 export OPENCODE_SERVER_PASSWORD=your-password
 ```
 
-4. Send a prompt:
+4. Send a single prompt:
 
 ```bash
 go run . agent --prompt "hello from miniclaw"
+```
+
+5. Start interactive mode (same session for all turns):
+
+```bash
+go run . agent
 ```
