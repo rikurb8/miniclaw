@@ -29,6 +29,7 @@ type fakeProviderClient struct {
 	lastPrompt    string
 	lastModel     string
 	lastAgent     string
+	lastSystem    string
 }
 
 func (f *fakeProviderClient) Health(ctx context.Context) error {
@@ -50,7 +51,9 @@ func (f *fakeProviderClient) CreateSession(ctx context.Context, title string) (s
 	return f.createSessionID, nil
 }
 
-func (f *fakeProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
+func (f *fakeProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
+	_ = systemPrompt
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -59,6 +62,7 @@ func (f *fakeProviderClient) Prompt(ctx context.Context, sessionID string, promp
 	f.lastPrompt = prompt
 	f.lastModel = model
 	f.lastAgent = agent
+	f.lastSystem = systemPrompt
 
 	if f.promptErr != nil {
 		return providertypes.PromptResult{}, f.promptErr
@@ -75,7 +79,7 @@ func (f *fakeProviderClient) promptCallCount() int {
 
 func TestStartSession(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{}, "", "")
 
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
@@ -88,7 +92,7 @@ func TestStartSession(t *testing.T) {
 
 func TestPromptStoresMemory(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "hello back"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{}, "", "")
 
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
@@ -116,7 +120,7 @@ func TestPromptStoresMemory(t *testing.T) {
 
 func TestPromptWithoutSession(t *testing.T) {
 	client := &fakeProviderClient{}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{}, "", "")
 
 	_, err := inst.Prompt(context.Background(), "hello")
 	if err == nil {
@@ -126,7 +130,7 @@ func TestPromptWithoutSession(t *testing.T) {
 
 func TestStartSessionFailsOnHealthError(t *testing.T) {
 	client := &fakeProviderClient{healthErr: errors.New("unhealthy")}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{}, "", "")
 
 	err := inst.StartSession(context.Background(), "miniclaw")
 	if err == nil {
@@ -136,7 +140,7 @@ func TestStartSessionFailsOnHealthError(t *testing.T) {
 
 func TestEnqueueAndWaitRejectsEmptyPrompt(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1}, "", "")
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}
@@ -144,5 +148,25 @@ func TestEnqueueAndWaitRejectsEmptyPrompt(t *testing.T) {
 	_, err := inst.EnqueueAndWait(context.Background(), "   ")
 	if err == nil {
 		t.Fatalf("expected error for empty prompt")
+	}
+}
+
+func TestPromptPassesAgentAndSystemProfile(t *testing.T) {
+	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "ok"}
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{}, "coding-agent", "system profile")
+
+	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
+		t.Fatalf("StartSession error: %v", err)
+	}
+
+	if _, err := inst.Prompt(context.Background(), "hello"); err != nil {
+		t.Fatalf("Prompt error: %v", err)
+	}
+
+	if client.lastAgent != "coding-agent" {
+		t.Fatalf("agent = %q, want %q", client.lastAgent, "coding-agent")
+	}
+	if client.lastSystem != "system profile" {
+		t.Fatalf("system prompt = %q, want %q", client.lastSystem, "system profile")
 	}
 }

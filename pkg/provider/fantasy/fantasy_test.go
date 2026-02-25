@@ -135,10 +135,10 @@ func TestPromptValidatesSessionAndInput(t *testing.T) {
 		sessions: map[string][]core.Message{},
 	}
 
-	if _, err := client.Prompt(context.Background(), "", "hello", "gpt-5.2", ""); err == nil {
+	if _, err := client.Prompt(context.Background(), "", "hello", "gpt-5.2", "", ""); err == nil {
 		t.Fatal("expected error for empty session")
 	}
-	if _, err := client.Prompt(context.Background(), "missing", "hello", "gpt-5.2", ""); err == nil {
+	if _, err := client.Prompt(context.Background(), "missing", "hello", "gpt-5.2", "", ""); err == nil {
 		t.Fatal("expected error for missing session")
 	}
 
@@ -147,7 +147,7 @@ func TestPromptValidatesSessionAndInput(t *testing.T) {
 		t.Fatalf("CreateSession error: %v", err)
 	}
 
-	if _, err := client.Prompt(context.Background(), sessionID, "", "gpt-5.2", ""); err == nil {
+	if _, err := client.Prompt(context.Background(), sessionID, "", "gpt-5.2", "", ""); err == nil {
 		t.Fatal("expected error for empty prompt")
 	}
 }
@@ -176,7 +176,7 @@ func TestPromptMaintainsSessionHistory(t *testing.T) {
 		t.Fatalf("CreateSession error: %v", err)
 	}
 
-	first, err := client.Prompt(context.Background(), sessionID, "hello", "gpt-5.2", "")
+	first, err := client.Prompt(context.Background(), sessionID, "hello", "gpt-5.2", "", "")
 	if err != nil {
 		t.Fatalf("first Prompt error: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestPromptMaintainsSessionHistory(t *testing.T) {
 		t.Fatalf("first response = %q, want %q", first.Text, "reply-1")
 	}
 
-	second, err := client.Prompt(context.Background(), sessionID, "how are you", "gpt-5.2", "")
+	second, err := client.Prompt(context.Background(), sessionID, "how are you", "gpt-5.2", "", "")
 	if err != nil {
 		t.Fatalf("second Prompt error: %v", err)
 	}
@@ -218,5 +218,42 @@ func TestExtractText(t *testing.T) {
 	got := extractText(content)
 	if got != "first\nsecond" {
 		t.Fatalf("extractText() = %q", got)
+	}
+}
+
+func TestPromptInjectsSystemMessageOnFirstTurn(t *testing.T) {
+	provider := &fakeLanguageModelProvider{model: &fakeLanguageModel{}}
+	var firstCallMessages []core.Message
+	client := &Client{
+		provider: provider,
+		modelID:  "gpt-5.2",
+		sessions: map[string][]core.Message{},
+		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall) (*core.AgentResult, error) {
+			if firstCallMessages == nil {
+				firstCallMessages = call.Messages
+			}
+			return &core.AgentResult{
+				Response: core.Response{
+					Content: core.ResponseContent{core.TextContent{Text: "reply"}},
+				},
+			}, nil
+		},
+	}
+
+	sessionID, err := client.CreateSession(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CreateSession error: %v", err)
+	}
+
+	_, err = client.Prompt(context.Background(), sessionID, "hello", "gpt-5.2", "", "system profile")
+	if err != nil {
+		t.Fatalf("Prompt error: %v", err)
+	}
+
+	if len(firstCallMessages) != 1 {
+		t.Fatalf("messages length = %d, want 1", len(firstCallMessages))
+	}
+	if firstCallMessages[0].Role != core.MessageRoleSystem {
+		t.Fatalf("first message role = %q, want %q", firstCallMessages[0].Role, core.MessageRoleSystem)
 	}
 }

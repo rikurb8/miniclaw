@@ -118,7 +118,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return sessionID, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
 	_ = agent
 
 	ctx, cancel := c.withTimeout(ctx)
@@ -142,6 +142,18 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 	history, ok := c.sessionHistory(sessionID)
 	if !ok {
 		return providertypes.PromptResult{}, errors.New("session is not started")
+	}
+
+	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
+	if trimmedSystemPrompt != "" && len(history) == 0 {
+		systemMessage := core.Message{
+			Role: core.MessageRoleSystem,
+			Content: []core.MessagePart{
+				core.TextPart{Text: trimmedSystemPrompt},
+			},
+		}
+		history = append(history, systemMessage)
+		c.appendSessionMessages(sessionID, systemMessage)
 	}
 
 	languageModel, err := c.provider.LanguageModel(ctx, modelID)

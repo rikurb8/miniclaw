@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 
 	"miniclaw/pkg/agent"
+	agentprofile "miniclaw/pkg/agent/profile"
 	"miniclaw/pkg/bus"
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/logger"
@@ -120,7 +121,12 @@ func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger, a
 }
 
 func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog.Logger, client provider.Client, agentType string) error {
-	runtime := agent.New(client, cfg.Agents.Defaults.Model, cfg.Heartbeat)
+	systemProfile, err := agentprofile.ResolveSystemProfile(cfg.Agents.Defaults.Provider)
+	if err != nil {
+		return fmt.Errorf("resolve agent profile: %w", err)
+	}
+
+	runtime := agent.New(client, cfg.Agents.Defaults.Model, cfg.Heartbeat, "", systemProfile)
 
 	ctx := context.Background()
 	if err := runtime.StartSession(ctx, "miniclaw"); err != nil {

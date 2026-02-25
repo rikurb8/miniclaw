@@ -194,7 +194,9 @@ func (f *fakeCmdProviderClient) CreateSession(ctx context.Context, title string)
 	return f.createSessionID, nil
 }
 
-func (f *fakeCmdProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
+func (f *fakeCmdProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
+	_ = systemPrompt
+
 	f.promptCallCount++
 	f.lastSessionID = sessionID
 	f.lastPrompt = prompt
@@ -208,7 +210,7 @@ func (f *fakeCmdProviderClient) Prompt(ctx context.Context, sessionID string, pr
 
 func TestExecutePromptHeartbeatDisabledUsesDirectPrompt(t *testing.T) {
 	client := &fakeCmdProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	runtime := agent.New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: false})
+	runtime := agent.New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: false}, "", "")
 	if err := runtime.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}
@@ -227,7 +229,7 @@ func TestExecutePromptHeartbeatDisabledUsesDirectPrompt(t *testing.T) {
 
 func TestExecutePromptHeartbeatEnabledUsesQueue(t *testing.T) {
 	client := &fakeCmdProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	runtime := agent.New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1})
+	runtime := agent.New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1}, "", "")
 	if err := runtime.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}
@@ -273,7 +275,7 @@ func TestExecutePromptHeartbeatEnabledUsesQueue(t *testing.T) {
 func TestExecutePromptPropagatesError(t *testing.T) {
 	wantErr := errors.New("prompt failed")
 	client := &fakeCmdProviderClient{createSessionID: "session-1", promptErr: wantErr}
-	runtime := agent.New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: false})
+	runtime := agent.New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: false}, "", "")
 	if err := runtime.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}

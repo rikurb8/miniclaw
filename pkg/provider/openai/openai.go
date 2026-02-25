@@ -89,7 +89,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return strings.TrimSpace(conversation.ID), nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	log := providerLogger().With("operation", "prompt")
@@ -116,13 +116,18 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		"prompt_length", len(prompt),
 	)
 
-	response, err := c.client.Responses.New(ctx, responses.ResponseNewParams{
+	params := responses.ResponseNewParams{
 		Model: normalizedModel,
 		Input: responses.ResponseNewParamsInputUnion{OfString: osdk.String(prompt)},
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{ID: sessionID},
 		},
-	})
+	}
+	if strings.TrimSpace(systemPrompt) != "" {
+		params.Instructions = osdk.String(strings.TrimSpace(systemPrompt))
+	}
+
+	response, err := c.client.Responses.New(ctx, params)
 	if err != nil {
 		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return providertypes.PromptResult{}, fmt.Errorf("prompt failed: %w", err)

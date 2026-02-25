@@ -35,6 +35,11 @@ type promptResultMsg struct {
 
 type bootTickMsg struct{}
 
+type namedSpinner struct {
+	name    string
+	spinner spinner.Spinner
+}
+
 type model struct {
 	ctx          context.Context
 	promptFn     PromptFunc
@@ -62,10 +67,7 @@ type model struct {
 
 func newModel(ctx context.Context, promptFn PromptFunc, runMode mode, prompt string, info RuntimeInfo) *model {
 	spin := spinner.New()
-	spin.Spinner = spinner.Spinner{
-		Frames: []string{"🕹️", "🎛️", "📼", "🎚️"},
-		FPS:    90 * time.Millisecond,
-	}
+	spin.Spinner = spinner.Dot
 	spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
 	in := textinput.New()
@@ -170,6 +172,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isExitCommand(prompt) {
 				return m, tea.Quit
 			}
+			if isSpinnerShowcaseCommand(prompt) {
+				m.lastErr = ""
+				m.messages = append(m.messages,
+					chatMessage{role: "user", content: prompt},
+					chatMessage{role: "assistant", content: spinnerShowcaseContent()},
+				)
+				m.input.SetValue("")
+				m.followLog = true
+				m.refreshViewport(true)
+				return m, nil
+			}
 
 			m.lastErr = ""
 			m.messages = append(m.messages, chatMessage{role: "user", content: prompt})
@@ -240,9 +253,9 @@ func (m *model) View() string {
 	))
 	line := m.theme.divider.Width(m.width - 2).Render(strings.Repeat("═", max(8, m.width-2)))
 
-	status := m.theme.status.Render("💡 Enter send  ·  PgUp/PgDn scroll  ·  End jump latest  ·  🛑 Ctrl+C/Esc quit")
+	status := m.theme.status.Render("💡 Enter send  ·  /spinners loaders  ·  PgUp/PgDn scroll  ·  End jump latest  ·  🛑 Ctrl+C/Esc quit")
 	if m.isLoading {
-		status = m.theme.statusBusy.Render(fmt.Sprintf("%s ⚡ cooking response...", m.spinner.View()))
+		status = m.theme.statusBusy.Render(fmt.Sprintf("%s ⚡ generating response...", m.spinner.View()))
 	}
 	if m.lastErr != "" {
 		status = m.theme.statusErr.Render("🚨 last request failed - try again")
@@ -478,5 +491,50 @@ func isExitCommand(input string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func isSpinnerShowcaseCommand(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "/spinners", "spinners", "/spinner", "spinner":
+		return true
+	default:
+		return false
+	}
+}
+
+func spinnerShowcaseContent() string {
+	lines := []string{"Bubble Tea spinner showcase:"}
+	for _, item := range spinnerPresets() {
+		lines = append(lines, fmt.Sprintf("- %s (%s): %s", item.name, item.spinner.FPS, spinnerPreviewFrames(item.spinner, 8)))
+	}
+
+	lines = append(lines, "", "Tell me which spinner you want as the default and I can set it.")
+	return strings.Join(lines, "\n")
+}
+
+func spinnerPreviewFrames(model spinner.Spinner, maxFrames int) string {
+	frames := model.Frames
+	if len(frames) > maxFrames {
+		frames = frames[:maxFrames]
+	}
+
+	return strings.Join(frames, " ")
+}
+
+func spinnerPresets() []namedSpinner {
+	return []namedSpinner{
+		{name: "Line", spinner: spinner.Line},
+		{name: "Dot", spinner: spinner.Dot},
+		{name: "MiniDot", spinner: spinner.MiniDot},
+		{name: "Jump", spinner: spinner.Jump},
+		{name: "Pulse", spinner: spinner.Pulse},
+		{name: "Points", spinner: spinner.Points},
+		{name: "Globe", spinner: spinner.Globe},
+		{name: "Moon", spinner: spinner.Moon},
+		{name: "Monkey", spinner: spinner.Monkey},
+		{name: "Meter", spinner: spinner.Meter},
+		{name: "Hamburger", spinner: spinner.Hamburger},
+		{name: "Ellipsis", spinner: spinner.Ellipsis},
 	}
 }

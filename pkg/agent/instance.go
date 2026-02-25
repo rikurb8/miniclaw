@@ -14,6 +14,8 @@ import (
 type Instance struct {
 	client    provider.Client
 	model     string
+	agent     string
+	system    string
 	heartbeat config.HeartbeatConfig
 	memory    *Memory
 	// queueWake is a coalescing signal channel: one token means "queue has work".
@@ -34,10 +36,12 @@ type promptResult struct {
 	err    error
 }
 
-func New(client provider.Client, model string, heartbeat config.HeartbeatConfig) *Instance {
+func New(client provider.Client, model string, heartbeat config.HeartbeatConfig, agent string, system string) *Instance {
 	return &Instance{
 		client:    client,
 		model:     strings.TrimSpace(model),
+		agent:     strings.TrimSpace(agent),
+		system:    strings.TrimSpace(system),
 		heartbeat: heartbeat,
 		memory:    NewMemory(),
 		queueWake: make(chan struct{}, 1),
@@ -72,7 +76,7 @@ func (i *Instance) Prompt(ctx context.Context, prompt string) (providertypes.Pro
 		return providertypes.PromptResult{}, errors.New("session is not started")
 	}
 
-	result, err := i.client.Prompt(ctx, sessionID, prompt, i.model, "")
+	result, err := i.client.Prompt(ctx, sessionID, prompt, i.model, i.agent, i.system)
 	if err != nil {
 		return providertypes.PromptResult{}, err
 	}

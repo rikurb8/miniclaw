@@ -93,7 +93,9 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return session.ID, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
+	_ = systemPrompt
+
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	log := providerLogger().With("operation", "prompt")

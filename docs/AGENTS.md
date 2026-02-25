@@ -2,6 +2,12 @@
 
 MiniClaw selects agent runtime behavior through `agents.defaults.type` in config.
 
+## Built-in agent profile (v1)
+
+- MiniClaw includes a built-in default profile template at `pkg/agent/profile/templates/default.md`.
+- For non-OpenCode providers, MiniClaw injects this profile as system instructions.
+- For OpenCode provider, MiniClaw does not inject a local system profile by default because OpenCode server-side agent prompts are the source of truth.
+
 ## `generic-agent`
 
 - Default runtime mode.

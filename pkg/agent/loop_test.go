@@ -12,7 +12,7 @@ import (
 
 func TestRunDisabledHeartbeatReturnsImmediately(t *testing.T) {
 	client := &fakeProviderClient{}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: false})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: false}, "", "")
 
 	if err := inst.Run(context.Background()); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -21,7 +21,7 @@ func TestRunDisabledHeartbeatReturnsImmediately(t *testing.T) {
 
 func TestStepConsumesQueuedPrompt(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{}, "", "")
 
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
@@ -39,7 +39,7 @@ func TestStepConsumesQueuedPrompt(t *testing.T) {
 
 func TestRunProcessesQueuedPrompt(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 60})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 60}, "", "")
 
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
@@ -81,7 +81,7 @@ func TestRunProcessesQueuedPrompt(t *testing.T) {
 
 func TestRunWithInvalidIntervalFails(t *testing.T) {
 	client := &fakeProviderClient{}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 0})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 0}, "", "")
 
 	err := inst.Run(context.Background())
 	if err == nil {
@@ -91,7 +91,7 @@ func TestRunWithInvalidIntervalFails(t *testing.T) {
 
 func TestEnqueueAndWaitReturnsStepResult(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1}, "", "")
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestEnqueueAndWaitReturnsStepResult(t *testing.T) {
 
 func TestEnqueueAndWaitRespectsContextCancel(t *testing.T) {
 	client := &fakeProviderClient{createSessionID: "session-1", promptResponse: "pong"}
-	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1})
+	inst := New(client, "openai/gpt-5.2", config.HeartbeatConfig{Enabled: true, Interval: 1}, "", "")
 	if err := inst.StartSession(context.Background(), "miniclaw"); err != nil {
 		t.Fatalf("StartSession error: %v", err)
 	}

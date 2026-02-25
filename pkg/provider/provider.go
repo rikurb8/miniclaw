@@ -14,7 +14,7 @@ import (
 type Client interface {
 	Health(ctx context.Context) error
 	CreateSession(ctx context.Context, title string) (string, error)
-	Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error)
+	Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error)
 }
 
 func New(cfg *config.Config) (Client, error) {
