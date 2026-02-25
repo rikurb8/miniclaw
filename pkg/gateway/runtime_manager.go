@@ -13,6 +13,7 @@ import (
 	providertypes "miniclaw/pkg/provider/types"
 )
 
+// runtimeManager owns per-session agent runtimes for gateway-driven prompts.
 type runtimeManager struct {
 	ctx    context.Context
 	client provider.Client
@@ -24,12 +25,14 @@ type runtimeManager struct {
 	runtimes map[string]*sessionRuntime
 }
 
+// sessionRuntime is the mutable runtime state tracked for one session key.
 type sessionRuntime struct {
 	instance   *agent.Instance
 	promptMu   sync.Mutex
 	cancelLoop context.CancelFunc
 }
 
+// newRuntimeManager builds a session runtime manager and resolves the system profile once.
 func newRuntimeManager(ctx context.Context, cfg *config.Config, client provider.Client, log *slog.Logger) (*runtimeManager, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -54,6 +57,7 @@ func newRuntimeManager(ctx context.Context, cfg *config.Config, client provider.
 	}, nil
 }
 
+// Prompt routes one prompt to a session runtime and serializes requests per session.
 func (m *runtimeManager) Prompt(ctx context.Context, sessionKey string, prompt string) (providertypes.PromptResult, error) {
 	runtime, err := m.runtimeForSession(ctx, sessionKey)
 	if err != nil {
@@ -70,6 +74,7 @@ func (m *runtimeManager) Prompt(ctx context.Context, sessionKey string, prompt s
 	return runtime.instance.Prompt(ctx, prompt)
 }
 
+// runtimeForSession returns an existing runtime or lazily initializes a new one.
 func (m *runtimeManager) runtimeForSession(ctx context.Context, sessionKey string) (*sessionRuntime, error) {
 	m.mu.RLock()
 	runtime, ok := m.runtimes[sessionKey]
@@ -106,6 +111,7 @@ func (m *runtimeManager) runtimeForSession(ctx context.Context, sessionKey strin
 	return runtime, nil
 }
 
+// Close stops all heartbeat loops and drops tracked session runtimes.
 func (m *runtimeManager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

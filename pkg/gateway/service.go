@@ -24,6 +24,7 @@ const (
 	defaultHealthPort = 18790
 )
 
+// Service coordinates channel adapters, runtime routing, and health endpoints.
 type Service struct {
 	cfg      *config.Config
 	log      *slog.Logger
@@ -38,11 +39,13 @@ type Service struct {
 	channelStates    map[string]channelState
 }
 
+// channelState captures runtime status for one configured channel adapter.
 type channelState struct {
 	Running bool   `json:"running"`
 	Error   string `json:"error,omitempty"`
 }
 
+// statusResponse is the JSON payload returned by health/readiness endpoints.
 type statusResponse struct {
 	Status           string                  `json:"status"`
 	UptimeSeconds    int64                   `json:"uptime_seconds"`
@@ -51,6 +54,7 @@ type statusResponse struct {
 	Channels         map[string]channelState `json:"channels"`
 }
 
+// NewService constructs a gateway service with provider client and runtime manager.
 func NewService(ctx context.Context, cfg *config.Config, adapters []channel.Adapter, log *slog.Logger) (*Service, error) {
 	if cfg == nil {
 		return nil, errors.New("config is required")
@@ -87,6 +91,7 @@ func NewService(ctx context.Context, cfg *config.Config, adapters []channel.Adap
 	}, nil
 }
 
+// Run starts channel adapters, provider health checks, and the status HTTP server.
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -143,6 +148,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 }
 
+// handleInbound executes one inbound message through runtime manager prompt flow.
 func (s *Service) handleInbound(ctx context.Context, inbound bus.InboundMessage) (bus.OutboundMessage, error) {
 	result, err := s.manager.Prompt(ctx, inbound.SessionKey, inbound.Content)
 	if err != nil {
@@ -163,6 +169,7 @@ func (s *Service) handleInbound(ctx context.Context, inbound bus.InboundMessage)
 	}, nil
 }
 
+// runHealthServer hosts /healthz and /readyz status endpoints.
 func (s *Service) runHealthServer(ctx context.Context, errCh chan<- error) {
 	host := strings.TrimSpace(s.cfg.Gateway.Host)
 	if host == "" {
@@ -198,10 +205,12 @@ func (s *Service) runHealthServer(ctx context.Context, errCh chan<- error) {
 	}
 }
 
+// handleHealth always reports process liveness.
 func (s *Service) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.respondStatus(w, http.StatusOK, "ok")
 }
 
+// handleReady reports runtime readiness based on provider and channel state.
 func (s *Service) handleReady(w http.ResponseWriter, _ *http.Request) {
 	statusCode := http.StatusOK
 	status := "ready"
@@ -213,6 +222,7 @@ func (s *Service) handleReady(w http.ResponseWriter, _ *http.Request) {
 	s.respondStatus(w, statusCode, status)
 }
 
+// respondStatus writes one JSON health/readiness payload.
 func (s *Service) respondStatus(w http.ResponseWriter, statusCode int, status string) {
 	payload := s.currentStatus(status)
 
@@ -223,6 +233,7 @@ func (s *Service) respondStatus(w http.ResponseWriter, statusCode int, status st
 	}
 }
 
+// currentStatus snapshots current service health metadata for HTTP responses.
 func (s *Service) currentStatus(status string) statusResponse {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -251,6 +262,7 @@ func (s *Service) currentStatus(status string) statusResponse {
 	}
 }
 
+// isReady evaluates whether the gateway can currently serve prompts.
 func (s *Service) isReady() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -282,6 +294,7 @@ func (s *Service) isReady() bool {
 	return true
 }
 
+// checkProviderHealth updates provider status state from a live health request.
 func (s *Service) checkProviderHealth(ctx context.Context) error {
 	if err := s.provider.Health(ctx); err != nil {
 		s.mu.Lock()
@@ -298,12 +311,14 @@ func (s *Service) checkProviderHealth(ctx context.Context) error {
 	return nil
 }
 
+// setChannelState updates state for one channel adapter.
 func (s *Service) setChannelState(name string, state channelState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.channelStates[name] = state
 }
 
+// errorString converts nil/non-nil errors into status-safe string values.
 func errorString(err error) string {
 	if err == nil {
 		return ""
