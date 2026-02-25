@@ -21,12 +21,14 @@ const channelName = "telegram"
 const messagePreviewLimit = 240
 const typingRefreshInterval = 4 * time.Second
 
+// Adapter bridges Telegram updates into MiniClaw inbound/outbound messages.
 type Adapter struct {
 	cfg       config.TelegramConfig
 	allowFrom map[string]struct{}
 	log       *slog.Logger
 }
 
+// NewAdapter validates Telegram configuration and constructs an adapter instance.
 func NewAdapter(cfg config.TelegramConfig, log *slog.Logger) (*Adapter, error) {
 	token := strings.TrimSpace(cfg.Token)
 	if token == "" {
@@ -44,10 +46,12 @@ func NewAdapter(cfg config.TelegramConfig, log *slog.Logger) (*Adapter, error) {
 	}, nil
 }
 
+// Name returns the channel identifier used in bus metadata and logs.
 func (a *Adapter) Name() string {
 	return channelName
 }
 
+// Run starts Telegram long polling and forwards messages through the shared channel handler.
 func (a *Adapter) Run(ctx context.Context, handler channel.Handler) error {
 	if handler == nil {
 		return errors.New("handler is required")
@@ -84,6 +88,7 @@ func (a *Adapter) Run(ctx context.Context, handler channel.Handler) error {
 
 			content := strings.TrimSpace(message.Text)
 			if content == "" {
+				// Ignore non-text updates for now; runtime currently expects text content.
 				continue
 			}
 			if message.From == nil {
@@ -135,6 +140,9 @@ func (a *Adapter) Run(ctx context.Context, handler channel.Handler) error {
 	}
 }
 
+// senderAllowed checks whether a sender is permitted by allow_from config.
+//
+// When no allow list is configured, all senders are accepted.
 func (a *Adapter) senderAllowed(senderID string) bool {
 	if len(a.allowFrom) == 0 {
 		return true
@@ -144,10 +152,12 @@ func (a *Adapter) senderAllowed(senderID string) bool {
 	return ok
 }
 
+// sessionKey maps one Telegram chat to one runtime session namespace.
 func sessionKey(chatID string) string {
 	return "telegram:" + strings.TrimSpace(chatID)
 }
 
+// allowFromSet normalizes allow_from values into a lookup set.
 func allowFromSet(allowFrom []string) map[string]struct{} {
 	if len(allowFrom) == 0 {
 		return nil
@@ -169,6 +179,7 @@ func allowFromSet(allowFrom []string) map[string]struct{} {
 	return allowed
 }
 
+// previewText returns a bounded log-safe preview of message text.
 func previewText(text string) string {
 	trimmed := strings.TrimSpace(text)
 	if len(trimmed) <= messagePreviewLimit {
@@ -178,6 +189,8 @@ func previewText(text string) string {
 	return trimmed[:messagePreviewLimit] + "..."
 }
 
+// startTypingIndicator sends an initial typing action and refreshes it periodically
+// until the returned cancel function is called.
 func (a *Adapter) startTypingIndicator(ctx context.Context, bot *telego.Bot, chatID int64) context.CancelFunc {
 	typingCtx, cancel := context.WithCancel(ctx)
 
