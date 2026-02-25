@@ -14,6 +14,7 @@ import (
 	provideropenai "charm.land/fantasy/providers/openai"
 
 	"miniclaw/pkg/config"
+	providertypes "miniclaw/pkg/provider/types"
 )
 
 type languageModelProvider interface {
@@ -116,7 +117,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return sessionID, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
 	_ = agent
 
 	ctx, cancel := c.withTimeout(ctx)
@@ -124,27 +125,27 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
-		return "", errors.New("session id is required")
+		return providertypes.PromptResult{}, errors.New("session id is required")
 	}
 
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return "", errors.New("prompt is required")
+		return providertypes.PromptResult{}, errors.New("prompt is required")
 	}
 
 	modelID, err := normalizeOpenAIModel(model)
 	if err != nil {
-		return "", err
+		return providertypes.PromptResult{}, err
 	}
 
 	history, ok := c.sessionHistory(sessionID)
 	if !ok {
-		return "", errors.New("session is not started")
+		return providertypes.PromptResult{}, errors.New("session is not started")
 	}
 
 	languageModel, err := c.provider.LanguageModel(ctx, modelID)
 	if err != nil {
-		return "", fmt.Errorf("resolve language model: %w", err)
+		return providertypes.PromptResult{}, fmt.Errorf("resolve language model: %w", err)
 	}
 
 	call := core.AgentCall{
@@ -165,12 +166,12 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 
 	result, err := generate(ctx, languageModel, call)
 	if err != nil {
-		return "", fmt.Errorf("prompt failed: %w", err)
+		return providertypes.PromptResult{}, fmt.Errorf("prompt failed: %w", err)
 	}
 
 	response := extractText(result.Response.Content)
 	if response == "" {
-		return "", errors.New("prompt succeeded but returned no text")
+		return providertypes.PromptResult{}, errors.New("prompt succeeded but returned no text")
 	}
 
 	c.appendSessionMessages(sessionID,
@@ -183,7 +184,28 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		},
 	)
 
-	return response, nil
+	usage := providertypes.TokenUsage{
+		InputTokens:         result.TotalUsage.InputTokens,
+		OutputTokens:        result.TotalUsage.OutputTokens,
+		TotalTokens:         result.TotalUsage.TotalTokens,
+		ReasoningTokens:     result.TotalUsage.ReasoningTokens,
+		CacheCreationTokens: result.TotalUsage.CacheCreationTokens,
+		CacheReadTokens:     result.TotalUsage.CacheReadTokens,
+	}
+
+	metadata := providertypes.PromptMetadata{
+		Provider: "openai",
+		Model:    modelID,
+		Agent:    strings.TrimSpace(agent),
+	}
+	if !usage.IsZero() {
+		metadata.Usage = &usage
+	}
+
+	return providertypes.PromptResult{
+		Text:     response,
+		Metadata: metadata,
+	}, nil
 }
 
 func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"miniclaw/pkg/config"
+	providertypes "miniclaw/pkg/provider/types"
 
 	osdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/conversations"
@@ -88,28 +89,26 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return strings.TrimSpace(conversation.ID), nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	log := providerLogger().With("operation", "prompt")
 	startedAt := time.Now()
 
-	_ = agent
-
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
-		return "", errors.New("session id is required")
+		return providertypes.PromptResult{}, errors.New("session id is required")
 	}
 
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return "", errors.New("prompt is required")
+		return providertypes.PromptResult{}, errors.New("prompt is required")
 	}
 
 	normalizedModel, err := normalizeModel(model)
 	if err != nil {
 		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
-		return "", err
+		return providertypes.PromptResult{}, err
 	}
 	log.Debug("provider request started",
 		"session_id", sessionID,
@@ -126,17 +125,33 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 	})
 	if err != nil {
 		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
-		return "", fmt.Errorf("prompt failed: %w", err)
+		return providertypes.PromptResult{}, fmt.Errorf("prompt failed: %w", err)
 	}
 
 	text := strings.TrimSpace(response.OutputText())
 	if text == "" {
 		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "no output text")
-		return "", errors.New("prompt succeeded but returned no text")
+		return providertypes.PromptResult{}, errors.New("prompt succeeded but returned no text")
 	}
 	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "response_length", len(text))
 
-	return text, nil
+	usage := providertypes.TokenUsage{
+		InputTokens:     response.Usage.InputTokens,
+		OutputTokens:    response.Usage.OutputTokens,
+		TotalTokens:     response.Usage.TotalTokens,
+		ReasoningTokens: response.Usage.OutputTokensDetails.ReasoningTokens,
+		CacheReadTokens: response.Usage.InputTokensDetails.CachedTokens,
+	}
+
+	return providertypes.PromptResult{
+		Text: text,
+		Metadata: providertypes.PromptMetadata{
+			Provider: "openai",
+			Model:    normalizedModel,
+			Agent:    strings.TrimSpace(agent),
+			Usage:    &usage,
+		},
+	}, nil
 }
 
 func providerLogger() *slog.Logger {

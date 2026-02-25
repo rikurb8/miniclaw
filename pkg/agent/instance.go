@@ -8,6 +8,7 @@ import (
 
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/provider"
+	providertypes "miniclaw/pkg/provider/types"
 )
 
 type Instance struct {
@@ -28,8 +29,8 @@ type queuedPrompt struct {
 }
 
 type promptResult struct {
-	response string
-	err      error
+	result providertypes.PromptResult
+	err    error
 }
 
 func New(client provider.Client, model string, heartbeat config.HeartbeatConfig) *Instance {
@@ -59,26 +60,26 @@ func (i *Instance) StartSession(ctx context.Context, title string) error {
 	return nil
 }
 
-func (i *Instance) Prompt(ctx context.Context, prompt string) (string, error) {
+func (i *Instance) Prompt(ctx context.Context, prompt string) (providertypes.PromptResult, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return "", errors.New("prompt cannot be empty")
+		return providertypes.PromptResult{}, errors.New("prompt cannot be empty")
 	}
 
 	sessionID := i.SessionID()
 	if sessionID == "" {
-		return "", errors.New("session is not started")
+		return providertypes.PromptResult{}, errors.New("session is not started")
 	}
 
-	response, err := i.client.Prompt(ctx, sessionID, prompt, i.model, "")
+	result, err := i.client.Prompt(ctx, sessionID, prompt, i.model, "")
 	if err != nil {
-		return "", err
+		return providertypes.PromptResult{}, err
 	}
 
 	i.memory.Append("user", prompt)
-	i.memory.Append("assistant", response)
+	i.memory.Append("assistant", result.Text)
 
-	return response, nil
+	return result, nil
 }
 
 func (i *Instance) SessionID() string {
@@ -100,17 +101,17 @@ func (i *Instance) EnqueuePrompt(prompt string) {
 	i.enqueuePrompt(prompt, nil)
 }
 
-func (i *Instance) EnqueueAndWait(ctx context.Context, prompt string) (string, error) {
+func (i *Instance) EnqueueAndWait(ctx context.Context, prompt string) (providertypes.PromptResult, error) {
 	resultCh := make(chan promptResult, 1)
 	if err := i.enqueuePrompt(prompt, resultCh); err != nil {
-		return "", err
+		return providertypes.PromptResult{}, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return providertypes.PromptResult{}, ctx.Err()
 	case result := <-resultCh:
-		return result.response, result.err
+		return result.result, result.err
 	}
 }
 

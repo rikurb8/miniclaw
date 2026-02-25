@@ -15,6 +15,7 @@ import (
 	"miniclaw/pkg/agent"
 	"miniclaw/pkg/bus"
 	"miniclaw/pkg/config"
+	providertypes "miniclaw/pkg/provider/types"
 )
 
 func TestIsExitCommand(t *testing.T) {
@@ -193,16 +194,16 @@ func (f *fakeCmdProviderClient) CreateSession(ctx context.Context, title string)
 	return f.createSessionID, nil
 }
 
-func (f *fakeCmdProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
+func (f *fakeCmdProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
 	f.promptCallCount++
 	f.lastSessionID = sessionID
 	f.lastPrompt = prompt
 	f.lastModel = model
 	f.lastAgent = agent
 	if f.promptErr != nil {
-		return "", f.promptErr
+		return providertypes.PromptResult{}, f.promptErr
 	}
-	return f.promptResponse, nil
+	return providertypes.PromptResult{Text: f.promptResponse}, nil
 }
 
 func TestExecutePromptHeartbeatDisabledUsesDirectPrompt(t *testing.T) {
@@ -216,8 +217,8 @@ func TestExecutePromptHeartbeatDisabledUsesDirectPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executePrompt error: %v", err)
 	}
-	if got != "pong" {
-		t.Fatalf("response = %q, want %q", got, "pong")
+	if got.Text != "pong" {
+		t.Fatalf("response = %q, want %q", got.Text, "pong")
 	}
 	if client.promptCallCount != 1 {
 		t.Fatalf("prompt calls = %d, want 1", client.promptCallCount)
@@ -231,7 +232,7 @@ func TestExecutePromptHeartbeatEnabledUsesQueue(t *testing.T) {
 		t.Fatalf("StartSession error: %v", err)
 	}
 
-	respCh := make(chan string, 1)
+	respCh := make(chan providertypes.PromptResult, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		response, err := executePrompt(context.Background(), runtime, "ping")
@@ -248,8 +249,8 @@ func TestExecutePromptHeartbeatEnabledUsesQueue(t *testing.T) {
 		case err := <-errCh:
 			t.Fatalf("executePrompt error: %v", err)
 		case got := <-respCh:
-			if got != "pong" {
-				t.Fatalf("response = %q, want %q", got, "pong")
+			if got.Text != "pong" {
+				t.Fatalf("response = %q, want %q", got.Text, "pong")
 			}
 			if client.promptCallCount != 1 {
 				t.Fatalf("prompt calls = %d, want 1", client.promptCallCount)
@@ -349,6 +350,53 @@ func TestLogStartupConfiguration(t *testing.T) {
 	}
 	if got := recordAttrValue(loggingRecord, "log_level"); got != "info" {
 		t.Fatalf("log_level = %v, want %q", got, "info")
+	}
+}
+
+func TestPromptResultMetadataIncludesUsage(t *testing.T) {
+	metadata := promptResultMetadata(providertypes.PromptResult{
+		Text: "hello",
+		Metadata: providertypes.PromptMetadata{
+			Usage: &providertypes.TokenUsage{
+				InputTokens:         10,
+				OutputTokens:        20,
+				TotalTokens:         30,
+				ReasoningTokens:     5,
+				CacheCreationTokens: 2,
+				CacheReadTokens:     7,
+			},
+		},
+	})
+
+	if got := metadata[metaUsageInKey]; got != "10" {
+		t.Fatalf("input usage = %q, want %q", got, "10")
+	}
+	if got := metadata[metaUsageOutKey]; got != "20" {
+		t.Fatalf("output usage = %q, want %q", got, "20")
+	}
+	if got := metadata[metaUsageTotalKey]; got != "30" {
+		t.Fatalf("total usage = %q, want %q", got, "30")
+	}
+}
+
+func TestProviderResultFromOutboundParsesUsage(t *testing.T) {
+	result := providerResultFromOutbound(bus.OutboundMessage{
+		Content: "answer",
+		Metadata: map[string]string{
+			metaUsageInKey:          "11",
+			metaUsageOutKey:         "22",
+			metaUsageTotalKey:       "33",
+			metaUsageReasonKey:      "4",
+			metaUsageCacheCreateKey: "5",
+			metaUsageCacheReadKey:   "6",
+		},
+	})
+
+	if result.Metadata.Usage == nil {
+		t.Fatal("expected usage metadata")
+	}
+	if result.Metadata.Usage.TotalTokens != 33 {
+		t.Fatalf("total tokens = %d, want 33", result.Metadata.Usage.TotalTokens)
 	}
 }
 

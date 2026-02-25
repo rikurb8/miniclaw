@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"miniclaw/pkg/config"
+	providertypes "miniclaw/pkg/provider/types"
 )
 
 type fakeProviderClient struct {
@@ -49,7 +50,7 @@ func (f *fakeProviderClient) CreateSession(ctx context.Context, title string) (s
 	return f.createSessionID, nil
 }
 
-func (f *fakeProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
+func (f *fakeProviderClient) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -60,9 +61,9 @@ func (f *fakeProviderClient) Prompt(ctx context.Context, sessionID string, promp
 	f.lastAgent = agent
 
 	if f.promptErr != nil {
-		return "", f.promptErr
+		return providertypes.PromptResult{}, f.promptErr
 	}
-	return f.promptResponse, nil
+	return providertypes.PromptResult{Text: f.promptResponse}, nil
 }
 
 func (f *fakeProviderClient) promptCallCount() int {
@@ -97,8 +98,8 @@ func TestPromptStoresMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prompt error: %v", err)
 	}
-	if response != "hello back" {
-		t.Fatalf("response = %q, want %q", response, "hello back")
+	if response.Text != "hello back" {
+		t.Fatalf("response = %q, want %q", response.Text, "hello back")
 	}
 
 	entries := inst.MemorySnapshot()

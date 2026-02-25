@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	providertypes "miniclaw/pkg/provider/types"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -23,11 +25,12 @@ const (
 type chatMessage struct {
 	role    string
 	content string
+	usage   *providertypes.TokenUsage
 }
 
 type promptResultMsg struct {
-	response string
-	err      error
+	result providertypes.PromptResult
+	err    error
 }
 
 type bootTickMsg struct{}
@@ -38,22 +41,26 @@ type model struct {
 	mode         mode
 	oneShotInput string
 
-	theme     theme
-	spinner   spinner.Model
-	input     textinput.Model
-	viewport  viewport.Model
-	messages  []chatMessage
-	width     int
-	height    int
-	isReady   bool
-	isLoading bool
-	lastErr   string
-	booting   bool
-	bootStep  int
-	followLog bool
+	theme      theme
+	spinner    spinner.Model
+	input      textinput.Model
+	viewport   viewport.Model
+	messages   []chatMessage
+	width      int
+	height     int
+	isReady    bool
+	isLoading  bool
+	lastErr    string
+	booting    bool
+	bootStep   int
+	followLog  bool
+	runtime    RuntimeInfo
+	usageIn    int64
+	usageOut   int64
+	usageTotal int64
 }
 
-func newModel(ctx context.Context, promptFn PromptFunc, runMode mode, prompt string) *model {
+func newModel(ctx context.Context, promptFn PromptFunc, runMode mode, prompt string, info RuntimeInfo) *model {
 	spin := spinner.New()
 	spin.Spinner = spinner.Spinner{
 		Frames: []string{"🕹️", "🎛️", "📼", "🎚️"},
@@ -82,6 +89,7 @@ func newModel(ctx context.Context, promptFn PromptFunc, runMode mode, prompt str
 		height:       28,
 		booting:      runMode == modeInteractive,
 		followLog:    true,
+		runtime:      info,
 	}
 }
 
@@ -191,7 +199,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage{role: "error", content: typed.err.Error()})
 		} else {
 			m.lastErr = ""
-			m.messages = append(m.messages, chatMessage{role: "assistant", content: typed.response})
+			m.messages = append(m.messages, chatMessage{role: "assistant", content: typed.result.Text, usage: typed.result.Metadata.Usage})
+			if typed.result.Metadata.Usage != nil {
+				m.usageIn += typed.result.Metadata.Usage.InputTokens
+				m.usageOut += typed.result.Metadata.Usage.OutputTokens
+				m.usageTotal += typed.result.Metadata.Usage.TotalTokens
+			}
 		}
 		m.refreshViewport(false)
 		if m.mode == modeOneShot {
@@ -215,7 +228,16 @@ func (m *model) View() string {
 	}
 
 	header := m.theme.header.Width(m.width - 2).Render("📟 MiniClaw Command Center")
-	meta := m.theme.headerMeta.Render(fmt.Sprintf("turns: %d", len(m.messages)))
+	meta := m.theme.headerMeta.Render(fmt.Sprintf(
+		"agent:%s · provider:%s · model:%s · turns:%d · tokens(in/out/total):%d/%d/%d",
+		displayOrNA(m.runtime.AgentType),
+		displayOrNA(m.runtime.Provider),
+		displayOrNA(m.runtime.Model),
+		conversationTurns(m.messages),
+		m.usageIn,
+		m.usageOut,
+		m.usageTotal,
+	))
 	line := m.theme.divider.Width(m.width - 2).Render(strings.Repeat("═", max(8, m.width-2)))
 
 	status := m.theme.status.Render("💡 Enter send  ·  PgUp/PgDn scroll  ·  End jump latest  ·  🛑 Ctrl+C/Esc quit")
@@ -267,9 +289,13 @@ func (m *model) refreshViewport(forceBottom bool) {
 				m.theme.userBox.Width(m.viewport.Width).Render(strings.TrimSpace(item.content)),
 			))
 		case "assistant":
+			assistantBody := strings.TrimSpace(item.content)
+			if item.usage != nil {
+				assistantBody = strings.TrimSpace(assistantBody + "\n\n" + m.theme.hint.Render(formatUsageLine(*item.usage)))
+			}
 			sections = append(sections, m.renderCard(
 				m.theme.assistantTitle.Render("▛▚ [ 🦞 ] ▞▜"),
-				m.theme.assistantBox.Width(m.viewport.Width).Render(strings.TrimSpace(item.content)),
+				m.theme.assistantBox.Width(m.viewport.Width).Render(assistantBody),
 			))
 		case "error":
 			sections = append(sections, m.renderCard(
@@ -417,9 +443,33 @@ func bootScriptLines() []string {
 
 func sendPromptCmd(ctx context.Context, promptFn PromptFunc, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		response, err := promptFn(ctx, prompt)
-		return promptResultMsg{response: response, err: err}
+		result, err := promptFn(ctx, prompt)
+		return promptResultMsg{result: result, err: err}
 	}
+}
+
+func displayOrNA(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "n/a"
+	}
+
+	return trimmed
+}
+
+func conversationTurns(messages []chatMessage) int {
+	count := 0
+	for _, message := range messages {
+		if message.role == "user" {
+			count++
+		}
+	}
+
+	return count
+}
+
+func formatUsageLine(usage providertypes.TokenUsage) string {
+	return fmt.Sprintf("tokens in/out/total: %d/%d/%d", usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
 }
 
 func isExitCommand(input string) bool {

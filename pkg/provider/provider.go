@@ -8,12 +8,13 @@ import (
 	"miniclaw/pkg/config"
 	provideropenai "miniclaw/pkg/provider/openai"
 	"miniclaw/pkg/provider/opencode"
+	providertypes "miniclaw/pkg/provider/types"
 )
 
 type Client interface {
 	Health(ctx context.Context) error
 	CreateSession(ctx context.Context, title string) (string, error)
-	Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error)
+	Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error)
 }
 
 func New(cfg *config.Config) (Client, error) {

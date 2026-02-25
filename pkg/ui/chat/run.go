@@ -4,14 +4,22 @@ import (
 	"context"
 	"fmt"
 
+	providertypes "miniclaw/pkg/provider/types"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-type PromptFunc func(ctx context.Context, prompt string) (string, error)
+type PromptFunc func(ctx context.Context, prompt string) (providertypes.PromptResult, error)
 
-func RunInteractive(ctx context.Context, promptFn PromptFunc) error {
-	model := newModel(ctx, promptFn, modeInteractive, "")
+type RuntimeInfo struct {
+	AgentType string
+	Provider  string
+	Model     string
+}
+
+func RunInteractive(ctx context.Context, promptFn PromptFunc, info RuntimeInfo) error {
+	model := newModel(ctx, promptFn, modeInteractive, "", info)
 	program := tea.NewProgram(model)
 	_, err := program.Run()
 	if err != nil {
@@ -24,7 +32,7 @@ func RunInteractive(ctx context.Context, promptFn PromptFunc) error {
 }
 
 func RunOneShot(ctx context.Context, promptFn PromptFunc, prompt string) error {
-	model := newModel(ctx, promptFn, modeOneShot, prompt)
+	model := newModel(ctx, promptFn, modeOneShot, prompt, RuntimeInfo{})
 	program := tea.NewProgram(model)
 	_, err := program.Run()
 	return err

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"miniclaw/pkg/config"
+	providertypes "miniclaw/pkg/provider/types"
 )
 
 func TestRunDisabledHeartbeatReturnsImmediately(t *testing.T) {
@@ -95,7 +96,7 @@ func TestEnqueueAndWaitReturnsStepResult(t *testing.T) {
 		t.Fatalf("StartSession error: %v", err)
 	}
 
-	respCh := make(chan string, 1)
+	respCh := make(chan providertypes.PromptResult, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		response, err := inst.EnqueueAndWait(context.Background(), "ping")
@@ -112,8 +113,8 @@ func TestEnqueueAndWaitReturnsStepResult(t *testing.T) {
 		case err := <-errCh:
 			t.Fatalf("EnqueueAndWait error: %v", err)
 		case response := <-respCh:
-			if response != "pong" {
-				t.Fatalf("response = %q, want %q", response, "pong")
+			if response.Text != "pong" {
+				t.Fatalf("response = %q, want %q", response.Text, "pong")
 			}
 			return
 		default:

@@ -19,6 +19,7 @@ import (
 	"miniclaw/pkg/logger"
 	"miniclaw/pkg/provider"
 	providerfantasy "miniclaw/pkg/provider/fantasy"
+	providertypes "miniclaw/pkg/provider/types"
 	"miniclaw/pkg/ui/chat"
 
 	"github.com/spf13/cobra"
@@ -28,12 +29,18 @@ var promptText string
 var promptRequestCounter atomic.Uint64
 
 const (
-	cliChannelName    = "cli"
-	cliChatID         = "local"
-	cliSessionKey     = "local"
-	agentTypeGeneric  = "generic-agent"
-	agentTypeOpenCode = "opencode-agent"
-	agentTypeFantasy  = "fantasy-agent"
+	cliChannelName          = "cli"
+	cliChatID               = "local"
+	cliSessionKey           = "local"
+	agentTypeGeneric        = "generic-agent"
+	agentTypeOpenCode       = "opencode-agent"
+	agentTypeFantasy        = "fantasy-agent"
+	metaUsageInKey          = "usage_input_tokens"
+	metaUsageOutKey         = "usage_output_tokens"
+	metaUsageTotalKey       = "usage_total_tokens"
+	metaUsageReasonKey      = "usage_reasoning_tokens"
+	metaUsageCacheCreateKey = "usage_cache_creation_tokens"
+	metaUsageCacheReadKey   = "usage_cache_read_tokens"
 )
 
 // agentCmd represents the agent command
@@ -87,11 +94,11 @@ func runAgentByType(agentType string, prompt string, cfg *config.Config, log *sl
 }
 
 func runGenericAgent(prompt string, cfg *config.Config, log *slog.Logger) error {
-	return runLocalAgentRuntime(prompt, cfg, log)
+	return runLocalAgentRuntime(prompt, cfg, log, agentTypeGeneric)
 }
 
 func runOpenCodeAgent(prompt string, cfg *config.Config, log *slog.Logger) error {
-	return runLocalAgentRuntime(prompt, cfg, log)
+	return runLocalAgentRuntime(prompt, cfg, log, agentTypeOpenCode)
 }
 
 func runFantasyAgent(prompt string, cfg *config.Config, log *slog.Logger) error {
@@ -100,19 +107,19 @@ func runFantasyAgent(prompt string, cfg *config.Config, log *slog.Logger) error 
 		return fmt.Errorf("initialize fantasy provider: %w", err)
 	}
 
-	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client)
+	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client, agentTypeFantasy)
 }
 
-func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger) error {
+func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger, agentType string) error {
 	client, err := provider.New(cfg)
 	if err != nil {
 		return fmt.Errorf("initialize provider: %w", err)
 	}
 
-	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client)
+	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client, agentType)
 }
 
-func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog.Logger, client provider.Client) error {
+func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog.Logger, client provider.Client, agentType string) error {
 	runtime := agent.New(client, cfg.Agents.Defaults.Model, cfg.Heartbeat)
 
 	ctx := context.Background()
@@ -158,7 +165,11 @@ func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog
 		return nil
 	}
 
-	runInteractive(promptCtx, messageBus)
+	runInteractive(promptCtx, messageBus, chat.RuntimeInfo{
+		AgentType: agentType,
+		Provider:  strings.TrimSpace(cfg.Agents.Defaults.Provider),
+		Model:     strings.TrimSpace(cfg.Agents.Defaults.Model),
+	})
 	return nil
 }
 
@@ -234,7 +245,7 @@ func resolvePrompt(args []string) string {
 }
 
 func runSinglePrompt(ctx context.Context, messageBus *bus.MessageBus, prompt string) {
-	promptFn := func(runCtx context.Context, text string) (string, error) {
+	promptFn := func(runCtx context.Context, text string) (providertypes.PromptResult, error) {
 		return executePromptViaBus(runCtx, messageBus, text)
 	}
 
@@ -243,17 +254,17 @@ func runSinglePrompt(ctx context.Context, messageBus *bus.MessageBus, prompt str
 	}
 }
 
-func runInteractive(ctx context.Context, messageBus *bus.MessageBus) {
-	promptFn := func(runCtx context.Context, text string) (string, error) {
+func runInteractive(ctx context.Context, messageBus *bus.MessageBus, info chat.RuntimeInfo) {
+	promptFn := func(runCtx context.Context, text string) (providertypes.PromptResult, error) {
 		return executePromptViaBus(runCtx, messageBus, text)
 	}
 
-	if err := chat.RunInteractive(ctx, promptFn); err != nil {
+	if err := chat.RunInteractive(ctx, promptFn, info); err != nil {
 		agentComponentLogger().Error("interactive ui failed", "error", err)
 	}
 }
 
-func executePrompt(ctx context.Context, runtime *agent.Instance, prompt string) (string, error) {
+func executePrompt(ctx context.Context, runtime *agent.Instance, prompt string) (providertypes.PromptResult, error) {
 	if runtime.HeartbeatEnabled() {
 		return runtime.EnqueueAndWait(ctx, prompt)
 	}
@@ -262,6 +273,10 @@ func executePrompt(ctx context.Context, runtime *agent.Instance, prompt string) 
 }
 
 func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus *bus.MessageBus) {
+	var sessionUsageIn int64
+	var sessionUsageOut int64
+	var sessionUsageTotal int64
+
 	for {
 		inbound, ok := messageBus.ConsumeInbound(ctx)
 		if !ok {
@@ -280,12 +295,13 @@ func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus 
 			},
 		})
 
-		response, err := executePrompt(ctx, runtime, inbound.Content)
+		result, err := executePrompt(ctx, runtime, inbound.Content)
 		outbound := bus.OutboundMessage{
 			Channel:    inbound.Channel,
 			ChatID:     inbound.ChatID,
 			SessionKey: inbound.SessionKey,
-			Content:    response,
+			Content:    result.Text,
+			Metadata:   promptResultMetadata(result),
 		}
 		if err != nil {
 			outbound.Error = err.Error()
@@ -298,15 +314,29 @@ func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus 
 				Error:      err.Error(),
 			})
 		} else {
+			usagePayload := map[string]string{
+				"response_length": strconv.Itoa(len(result.Text)),
+			}
+			if result.Metadata.Usage != nil {
+				usage := result.Metadata.Usage
+				sessionUsageIn += usage.InputTokens
+				sessionUsageOut += usage.OutputTokens
+				sessionUsageTotal += usage.TotalTokens
+
+				usagePayload[metaUsageInKey] = strconv.FormatInt(usage.InputTokens, 10)
+				usagePayload[metaUsageOutKey] = strconv.FormatInt(usage.OutputTokens, 10)
+				usagePayload[metaUsageTotalKey] = strconv.FormatInt(usage.TotalTokens, 10)
+				usagePayload["session_usage_input_tokens"] = strconv.FormatInt(sessionUsageIn, 10)
+				usagePayload["session_usage_output_tokens"] = strconv.FormatInt(sessionUsageOut, 10)
+				usagePayload["session_usage_total_tokens"] = strconv.FormatInt(sessionUsageTotal, 10)
+			}
 			_ = messageBus.PublishEvent(ctx, bus.Event{
 				Type:       bus.EventPromptCompleted,
 				Channel:    inbound.Channel,
 				ChatID:     inbound.ChatID,
 				SessionKey: inbound.SessionKey,
 				RequestID:  requestID,
-				Payload: map[string]string{
-					"response_length": strconv.Itoa(len(response)),
-				},
+				Payload:    usagePayload,
 			})
 		}
 
@@ -316,7 +346,7 @@ func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus 
 	}
 }
 
-func executePromptViaBus(ctx context.Context, messageBus *bus.MessageBus, prompt string) (string, error) {
+func executePromptViaBus(ctx context.Context, messageBus *bus.MessageBus, prompt string) (providertypes.PromptResult, error) {
 	requestID := strconv.FormatUint(promptRequestCounter.Add(1), 10)
 	inbound := bus.InboundMessage{
 		Channel:    cliChannelName,
@@ -330,24 +360,72 @@ func executePromptViaBus(ctx context.Context, messageBus *bus.MessageBus, prompt
 
 	if ok := messageBus.PublishInbound(ctx, inbound); !ok {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return providertypes.PromptResult{}, err
 		}
-		return "", errors.New("unable to enqueue prompt")
+		return providertypes.PromptResult{}, errors.New("unable to enqueue prompt")
 	}
 
 	outbound, ok := messageBus.SubscribeOutbound(ctx)
 	if !ok {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return providertypes.PromptResult{}, err
 		}
-		return "", errors.New("unable to receive prompt result")
+		return providertypes.PromptResult{}, errors.New("unable to receive prompt result")
 	}
 
 	if outbound.Error != "" {
-		return "", errors.New(outbound.Error)
+		return providertypes.PromptResult{}, errors.New(outbound.Error)
 	}
 
-	return outbound.Content, nil
+	return providerResultFromOutbound(outbound), nil
+}
+
+func promptResultMetadata(result providertypes.PromptResult) map[string]string {
+	if result.Metadata.Usage == nil {
+		return nil
+	}
+
+	usage := result.Metadata.Usage
+	return map[string]string{
+		metaUsageInKey:          strconv.FormatInt(usage.InputTokens, 10),
+		metaUsageOutKey:         strconv.FormatInt(usage.OutputTokens, 10),
+		metaUsageTotalKey:       strconv.FormatInt(usage.TotalTokens, 10),
+		metaUsageReasonKey:      strconv.FormatInt(usage.ReasoningTokens, 10),
+		metaUsageCacheCreateKey: strconv.FormatInt(usage.CacheCreationTokens, 10),
+		metaUsageCacheReadKey:   strconv.FormatInt(usage.CacheReadTokens, 10),
+	}
+}
+
+func providerResultFromOutbound(outbound bus.OutboundMessage) providertypes.PromptResult {
+	result := providertypes.PromptResult{Text: outbound.Content}
+	if outbound.Metadata == nil {
+		return result
+	}
+
+	usage := &providertypes.TokenUsage{
+		InputTokens:         parseInt64(outbound.Metadata[metaUsageInKey]),
+		OutputTokens:        parseInt64(outbound.Metadata[metaUsageOutKey]),
+		TotalTokens:         parseInt64(outbound.Metadata[metaUsageTotalKey]),
+		ReasoningTokens:     parseInt64(outbound.Metadata[metaUsageReasonKey]),
+		CacheCreationTokens: parseInt64(outbound.Metadata[metaUsageCacheCreateKey]),
+		CacheReadTokens:     parseInt64(outbound.Metadata[metaUsageCacheReadKey]),
+	}
+
+	if usage.IsZero() {
+		return result
+	}
+
+	result.Metadata.Usage = usage
+	return result
+}
+
+func parseInt64(value string) int64 {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return 0
+	}
+
+	return parsed
 }
 
 func observeAgentEvents(ctx context.Context, messageBus *bus.MessageBus) {

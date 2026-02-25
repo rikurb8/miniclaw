@@ -87,3 +87,25 @@ func TestBuildBasicAuthHeaderMissingEnvValue(t *testing.T) {
 		t.Fatal("expected no basic auth header")
 	}
 }
+
+func TestTokenCount(t *testing.T) {
+	tests := []struct {
+		name  string
+		input float64
+		want  int64
+	}{
+		{name: "zero", input: 0, want: 0},
+		{name: "negative", input: -3.2, want: 0},
+		{name: "integer", input: 12, want: 12},
+		{name: "rounded", input: 10.6, want: 11},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tokenCount(tt.input)
+			if got != tt.want {
+				t.Fatalf("tokenCount(%v) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}

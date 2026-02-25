@@ -180,16 +180,16 @@ func TestPromptMaintainsSessionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Prompt error: %v", err)
 	}
-	if first != "reply-1" {
-		t.Fatalf("first response = %q, want %q", first, "reply-1")
+	if first.Text != "reply-1" {
+		t.Fatalf("first response = %q, want %q", first.Text, "reply-1")
 	}
 
 	second, err := client.Prompt(context.Background(), sessionID, "how are you", "gpt-5.2", "")
 	if err != nil {
 		t.Fatalf("second Prompt error: %v", err)
 	}
-	if second != "reply-2" {
-		t.Fatalf("second response = %q, want %q", second, "reply-2")
+	if second.Text != "reply-2" {
+		t.Fatalf("second response = %q, want %q", second.Text, "reply-2")
 	}
 
 	history, ok := client.sessionHistory(sessionID)

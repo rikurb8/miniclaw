@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"time"
 
 	"miniclaw/pkg/config"
+	providertypes "miniclaw/pkg/provider/types"
 
 	sdk "github.com/sst/opencode-sdk-go"
 	"github.com/sst/opencode-sdk-go/option"
@@ -91,7 +93,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return session.ID, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (string, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string) (providertypes.PromptResult, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	log := providerLogger().With("operation", "prompt")
@@ -126,13 +128,13 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 	response, err := c.client.Session.Prompt(ctx, sessionID, params)
 	if err != nil {
 		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
-		return "", fmt.Errorf("prompt failed: %w", err)
+		return providertypes.PromptResult{}, fmt.Errorf("prompt failed: %w", err)
 	}
 
 	text := extractText(response.Parts)
 	if text == "" {
 		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "no text parts")
-		return "", errors.New("prompt succeeded but returned no text parts")
+		return providertypes.PromptResult{}, errors.New("prompt succeeded but returned no text parts")
 	}
 	log.Debug("provider request completed",
 		"duration_ms", time.Since(startedAt).Milliseconds(),
@@ -140,7 +142,27 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		"parts_count", len(response.Parts),
 	)
 
-	return text, nil
+	usage := providertypes.TokenUsage{
+		InputTokens:     tokenCount(response.Info.Tokens.Input),
+		OutputTokens:    tokenCount(response.Info.Tokens.Output),
+		TotalTokens:     tokenCount(response.Info.Tokens.Input) + tokenCount(response.Info.Tokens.Output),
+		ReasoningTokens: tokenCount(response.Info.Tokens.Reasoning),
+		CacheReadTokens: tokenCount(response.Info.Tokens.Cache.Read),
+	}
+	var usagePtr *providertypes.TokenUsage
+	if !usage.IsZero() {
+		usagePtr = &usage
+	}
+
+	return providertypes.PromptResult{
+		Text: text,
+		Metadata: providertypes.PromptMetadata{
+			Provider: strings.TrimSpace(response.Info.ProviderID),
+			Model:    strings.TrimSpace(response.Info.ModelID),
+			Agent:    strings.TrimSpace(agent),
+			Usage:    usagePtr,
+		},
+	}, nil
 }
 
 func providerLogger() *slog.Logger {
@@ -201,4 +223,12 @@ func extractText(parts []sdk.Part) string {
 	}
 
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func tokenCount(value float64) int64 {
+	if value <= 0 {
+		return 0
+	}
+
+	return int64(math.Round(value))
 }
