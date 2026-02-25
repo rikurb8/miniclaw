@@ -43,6 +43,46 @@ func TestLoadConfigFromEnvPath(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAppliesTelegramEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	content := `{
+	  "agents": {"defaults": {"type": "generic-agent", "model": "openai/gpt-5.2"}},
+	  "channels": {"telegram": {"enabled": true, "token": "from-config", "allow_from": ["111"]}},
+	  "providers": {"opencode": {"base_url": "http://127.0.0.1:4096"}},
+	  "heartbeat": {"enabled": true, "interval": 30},
+	  "devices": {"enabled": false, "monitor_usb": true},
+	  "gateway": {"host": "0.0.0.0", "port": 18790},
+	  "logging": {"format": "json", "level": "debug", "add_source": true}
+	}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	t.Setenv("MINICLAW_CONFIG", path)
+	t.Setenv("TELEGRAM_BOT_TOKEN", "from-env")
+	t.Setenv("TELEGRAM_ALLOW_FROM", " 123,456 ,, 789 ")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Channels.Telegram.Token != "from-env" {
+		t.Fatalf("channels.telegram.token = %q, want %q", cfg.Channels.Telegram.Token, "from-env")
+	}
+
+	wantAllowFrom := []string{"123", "456", "789"}
+	if len(cfg.Channels.Telegram.AllowFrom) != len(wantAllowFrom) {
+		t.Fatalf("channels.telegram.allow_from len = %d, want %d", len(cfg.Channels.Telegram.AllowFrom), len(wantAllowFrom))
+	}
+	for i, want := range wantAllowFrom {
+		if got := cfg.Channels.Telegram.AllowFrom[i]; got != want {
+			t.Fatalf("channels.telegram.allow_from[%d] = %q, want %q", i, got, want)
+		}
+	}
+}
+
 func TestLoadConfigInvalidEnvPath(t *testing.T) {
 	t.Setenv("MINICLAW_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
 

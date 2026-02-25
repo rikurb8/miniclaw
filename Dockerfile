@@ -13,7 +13,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 RUN apt-get update \
-	&& apt-get install --no-install-recommends -y ca-certificates \
+	&& apt-get install --no-install-recommends -y ca-certificates wget \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /out/miniclaw /usr/local/bin/miniclaw

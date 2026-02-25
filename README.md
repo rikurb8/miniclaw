@@ -1,8 +1,8 @@
 # Miniclaw
 > Not open, nano or pico but miniclaw 🦞
 
-MiniClaw is a small terminal AI assistant runner.
-You configure a provider/model, then run one-off prompts or an interactive chat loop.
+MiniClaw is a small AI assistant runtime.
+You can run it in local CLI mode (`agent`) or in gateway mode (`gateway`) for external channels.
 
 ## Fast Start
 
@@ -40,10 +40,59 @@ docker compose run --rm miniclaw agent
 
 That is enough to try MiniClaw end to end.
 
+## Gateway Mode (Channels)
+
+MiniClaw can also run as a channel gateway.
+
+- Current channel support: `telegram` via `telego` long polling.
+- Channel/runtime continuity: one provider session per channel session key (Telegram uses `telegram:<chat_id>`).
+- Status endpoints for orchestration:
+  - `GET /healthz` for liveness.
+  - `GET /readyz` for readiness (channel running + provider health).
+
+### Telegram Gateway Quickstart
+
+1. In `config/config.json`, enable Telegram channel:
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "",
+      "allow_from": []
+    }
+  }
+}
+```
+
+2. In `.env`, set Telegram secrets/allowlist:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:your-bot-token
+TELEGRAM_ALLOW_FROM=123456789
+```
+
+`TELEGRAM_ALLOW_FROM` accepts comma-separated user IDs (for example `123,456,789`).
+
+3. Start gateway mode:
+
+```bash
+go run . gateway
+```
+
+4. Check health:
+
+```bash
+curl -fsS http://127.0.0.1:18790/healthz
+curl -fsS http://127.0.0.1:18790/readyz
+```
+
 ## Documentation
 
 For a high-level architecture and key concepts walkthrough, see `docs/OVERVIEW.md`.
 For runtime type details, see `docs/AGENTS.md`.
+For gateway and channel details, see `docs/GATEWAY.md`.
 
 ## Development Commands
 
@@ -56,6 +105,7 @@ This repository now uses Taskfile as the primary local workflow.
 - Test: `task test`
 - Build: `task build`
 - Run: `task run -- agent --prompt "hello"`
+- Run gateway: `task run -- gateway`
 
 ## Agent types
 

@@ -1,12 +1,11 @@
 # MiniClaw Overview
 
-MiniClaw is a small agent runtime you run locally from the command line.
+MiniClaw is a small local runtime for AI agents.
 
-Think of it as a thin coordinator between three things:
+It currently has two execution modes:
 
-- user input from the CLI,
-- a runtime that manages session + state,
-- an external model provider (currently OpenCode and OpenAI).
+- `agent` mode: direct CLI prompting (single prompt or interactive chat).
+- `gateway` mode: channel-driven prompting (Telegram first), with health/readiness endpoints.
 
 Agent behavior is selected by `agents.defaults.type`:
 
@@ -16,26 +15,50 @@ Agent behavior is selected by `agents.defaults.type`:
 
 ## Architecture (High Level)
 
+### CLI agent mode
+
 ```text
-User
+User (terminal)
   |
   v
-miniclaw CLI (cmd/*)
-  - parses command and input
+miniclaw agent (cmd/agent.go)
+  - resolves prompt/input mode
   - loads config
   |
   v
-Agent Runtime (pkg/agent/*)
-  - starts/holds session
-  - routes prompts
-  - optional heartbeat queue
-  - in-memory conversation log
+agent.Instance (pkg/agent/*)
+  - provider session lifecycle
+  - direct/heartbeat prompt execution
+  - in-memory memory log
   |
   v
-Provider Interface (pkg/provider/*)
+provider.Client (pkg/provider/*)
   - Health
   - CreateSession
   - Prompt
+```
+
+### Gateway channel mode
+
+```text
+External channel (Telegram)
+  |
+  v
+Channel adapter (pkg/channel/telegram)
+  - receives inbound updates (long polling)
+  - maps to MiniClaw inbound shape
+  |
+  v
+Gateway service (pkg/gateway/service.go)
+  - validates provider health
+  - routes prompt to runtime manager
+  - emits outbound reply per channel
+  - serves /healthz and /readyz
+  |
+  v
+Runtime manager (pkg/gateway/runtime_manager.go)
+  - one agent runtime per session key
+  - one provider session per channel conversation
   |
   v
 Provider backend (OpenCode/OpenAI)
@@ -45,76 +68,71 @@ Provider backend (OpenCode/OpenAI)
 
 ### Runtime Instance
 
-`agent.Instance` is the core unit of execution. One instance represents one running agent context in the process.
-
-It holds:
-
-- the selected provider client,
-- the active remote session id,
-- the default model,
-- heartbeat behavior,
-- local in-memory message history.
+`agent.Instance` is the core execution unit. It owns provider session ID, model/system settings, heartbeat behavior, and in-memory memory entries.
 
 ### Session
 
-A session is created on the provider side and identified by `sessionID`.
+A provider-side session is created by `CreateSession` and reused across prompts.
 
-- prompts in the same run are sent to the same session,
-- session continuity is per running process,
-- starting a new process starts a new session.
+- In `agent` mode: one runtime session per process run.
+- In `gateway` mode: one runtime session per channel session key.
 
-### Provider Boundary
+Telegram v1 uses chat-level continuity via `telegram:<chat_id>`.
 
-MiniClaw runtime code depends on a small provider contract, not on OpenCode specifics directly.
+### Channel Adapter
 
-This keeps provider-specific API details inside `pkg/provider/opencode` and makes future providers easier to add.
+A channel adapter translates external transport events to MiniClaw inbound messages and sends outbound replies back.
 
-### Prompt Execution Modes
+- Current adapter: Telegram (`pkg/channel/telegram`) with long polling.
+- Enabled via config under `channels.*`.
+- Telegram allowlist can be applied through `channels.telegram.allow_from`.
 
-MiniClaw supports two ways to execute prompts:
+### Health and Readiness
 
-- direct mode: send immediately,
-- heartbeat mode: enqueue first, process on interval ticks.
+Gateway mode exposes two HTTP endpoints:
 
-Conceptually, heartbeat mode turns prompt handling into a simple pull loop.
+- `/healthz`: process liveness.
+- `/readyz`: readiness based on channel runtime state and provider health checks.
 
-### Memory
-
-MiniClaw stores conversation entries (`user` and `assistant`) in process memory.
-
-- useful for runtime state inspection,
-- not persisted across restarts,
-- separate from provider-side session storage.
+Address is configured by `gateway.host` and `gateway.port`.
 
 ## Request Lifecycle
 
+### `agent` mode
+
 ```text
-CLI input -> resolve prompt -> runtime checks session
-  -> provider prompt call -> response text
-  -> append to local memory -> print to user
+CLI input -> resolve prompt -> runtime session exists
+  -> provider prompt call -> append memory -> print response
 ```
 
-With heartbeat enabled, `enqueue prompt` happens first and provider call is done by the heartbeat step.
+### `gateway` mode
+
+```text
+Channel update -> adapter builds inbound message
+  -> runtime manager resolves session runtime
+  -> provider prompt call -> adapter sends reply to channel
+```
 
 ## Configuration That Matters Most
 
-For understanding runtime behavior, focus on:
+For day-to-day behavior, focus on:
 
 - `agents.defaults.type`
 - `agents.defaults.provider`
 - `agents.defaults.model`
-- `providers.opencode.*`
+- `channels.telegram.*`
+- `gateway.host`
+- `gateway.port`
 - `heartbeat.enabled`
 - `heartbeat.interval`
 
-Other config sections exist for broader project scope, but are not central to the current `agent` flow.
+Provider-specific tuning remains under `providers.*`.
 
 ## Current Scope
 
-MiniClaw today is best viewed as:
+MiniClaw today is intentionally lightweight:
 
-- a local CLI entrypoint,
-- a single-session runtime per process,
-- a provider-backed prompt loop with optional queued execution.
-
-It is intentionally lightweight and does not yet act as a full multi-session, persisted orchestration platform.
+- local CLI runtime (`agent`),
+- channel gateway runtime (`gateway`) with Telegram first,
+- in-memory runtime state only (no persistent local session store),
+- provider-backed prompt execution with optional heartbeat queue support.

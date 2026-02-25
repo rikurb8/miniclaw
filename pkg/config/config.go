@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+)
+
+const (
+	envTelegramBotToken  = "TELEGRAM_BOT_TOKEN"
+	envTelegramAllowFrom = "TELEGRAM_ALLOW_FROM"
 )
 
 type Config struct {
@@ -141,7 +147,37 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}
 
+	applyEnvOverrides(&cfg)
+
 	return &cfg, nil
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	if token := strings.TrimSpace(os.Getenv(envTelegramBotToken)); token != "" {
+		cfg.Channels.Telegram.Token = token
+	}
+
+	if rawAllowFrom := strings.TrimSpace(os.Getenv(envTelegramAllowFrom)); rawAllowFrom != "" {
+		cfg.Channels.Telegram.AllowFrom = parseCSV(rawAllowFrom)
+	}
+}
+
+func parseCSV(input string) []string {
+	parts := strings.Split(input, ",")
+	clean := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		clean = append(clean, trimmed)
+	}
+
+	return slices.Clip(clean)
 }
 
 func findConfigPath() (string, error) {

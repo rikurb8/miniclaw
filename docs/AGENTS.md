@@ -2,6 +2,8 @@
 
 MiniClaw selects agent runtime behavior through `agents.defaults.type` in config.
 
+These runtime types apply to both `agent` (CLI) and `gateway` (channel) commands.
+
 ## Built-in agent profile (v1)
 
 - MiniClaw includes a built-in default profile template at `pkg/agent/profile/templates/default.md`.
