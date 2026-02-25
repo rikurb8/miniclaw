@@ -39,9 +39,9 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, fmt.Errorf("fantasy-agent currently supports only provider openai, got %q", cfg.Agents.Defaults.Provider)
 	}
 
-	apiKey := resolveAPIKey(cfg.Providers.OpenAI)
+	apiKey := resolveAPIKey()
 	if apiKey == "" {
-		return nil, errors.New("providers.openai.api_key_env is required or OPENAI_API_KEY must be set")
+		return nil, errors.New("OPENAI_API_KEY must be set")
 	}
 
 	modelID, err := normalizeOpenAIModel(cfg.Agents.Defaults.Model)
@@ -257,13 +257,7 @@ func (c *Client) appendSessionMessages(sessionID string, messages ...core.Messag
 	c.sessions[sessionID] = history
 }
 
-func resolveAPIKey(cfg config.OpenAIProviderConfig) string {
-	if apiKeyEnv := strings.TrimSpace(cfg.APIKeyEnv); apiKeyEnv != "" {
-		if apiKey := strings.TrimSpace(os.Getenv(apiKeyEnv)); apiKey != "" {
-			return apiKey
-		}
-	}
-
+func resolveAPIKey() string {
 	return strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 }
 

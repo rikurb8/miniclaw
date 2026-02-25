@@ -16,28 +16,10 @@ func TestNewRequiresAPIKey(t *testing.T) {
 	}
 }
 
-func TestNewUsesConfiguredAPIKeyEnv(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("TEST_OPENAI_API_KEY", "sk-test")
-
-	cfg := &config.Config{}
-	cfg.Providers.OpenAI.APIKeyEnv = "TEST_OPENAI_API_KEY"
-
-	client, err := New(cfg)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if client == nil {
-		t.Fatal("expected client")
-	}
-}
-
-func TestNewFallsBackToDefaultAPIKeyEnv(t *testing.T) {
+func TestNewUsesOPENAIAPIKeyEnv(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-default")
-	t.Setenv("TEST_OPENAI_API_KEY", "")
 
 	cfg := &config.Config{}
-	cfg.Providers.OpenAI.APIKeyEnv = "TEST_OPENAI_API_KEY"
 
 	client, err := New(cfg)
 	if err != nil {

@@ -1,7 +1,44 @@
 # Miniclaw
 > Not open, nano or pico but miniclaw 🦞
 
-Experimental AI assistant project, work in progress
+MiniClaw is a small terminal AI assistant runner.
+You configure a provider/model, then run one-off prompts or an interactive chat loop.
+
+## Fast Start
+
+Use Docker Compose for the quickest setup.
+
+1. Create local config:
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+2. Create `.env` and add your API key:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set:
+
+```bash
+OPENAI_API_KEY=sk-your-real-key
+```
+
+3. Send one test prompt:
+
+```bash
+docker compose run --rm miniclaw agent --prompt "hello from miniclaw"
+```
+
+4. Start interactive chat:
+
+```bash
+docker compose run --rm miniclaw agent
+```
+
+That is enough to try MiniClaw end to end.
 
 ## Documentation
 
@@ -28,39 +65,6 @@ MiniClaw supports configurable agent runtimes through `agents.defaults.type`:
 - `opencode-agent`: reserved runtime mode for OpenCode-backed orchestration.
 - `fantasy-agent`: Fantasy-backed runtime flow (`charm.land/fantasy`), currently OpenAI provider only.
 
-## OpenCode provider (first supported provider)
-
-MiniClaw currently supports connecting to a running OpenCode server using
-`github.com/sst/opencode-sdk-go`.
-
-### Quickstart
-
-1. Start OpenCode server in another terminal:
-
-```bash
-opencode serve --port 4096 --hostname 127.0.0.1
-```
-
-2. Copy `config/config.example.json` to `config/config.json` and update any values you need.
-
-3. If your OpenCode server uses basic auth, set the password env var:
-
-```bash
-export OPENCODE_SERVER_PASSWORD=your-password
-```
-
-4. Send a single prompt:
-
-```bash
-go run . agent --prompt "hello from miniclaw"
-```
-
-5. Start interactive mode (same session for all turns):
-
-```bash
-go run . agent
-```
-
 ## OpenAI provider
 
 MiniClaw also supports OpenAI via `github.com/openai/openai-go/v3`.
@@ -77,11 +81,28 @@ export OPENAI_API_KEY=sk-...
 
 - `agents.defaults.type` to `fantasy-agent` (for Fantasy runtime) or `generic-agent` (default local runtime)
 - `agents.defaults.provider` to `openai`
-- `providers.openai.api_key_env` to `OPENAI_API_KEY`
 - `agents.defaults.model` to an OpenAI model (for example `openai/gpt-5.2` or `gpt-5.2`)
 
 3. Run:
 
 ```bash
 go run . agent --prompt "hello from openai provider"
+```
+
+## OpenCode provider
+
+MiniClaw can also connect to a running OpenCode server using `github.com/sst/opencode-sdk-go`.
+
+1. Start OpenCode server in another terminal:
+
+```bash
+opencode serve --port 4096 --hostname 127.0.0.1
+```
+
+2. Set provider config in `config/config.json` to use `opencode`.
+
+3. If basic auth is enabled, set:
+
+```bash
+export OPENCODE_SERVER_PASSWORD=your-password
 ```

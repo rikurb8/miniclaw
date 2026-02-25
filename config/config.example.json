@@ -11,14 +11,6 @@
       "max_tool_iterations": 20
     }
   },
-  "model_list": [
-    {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
-      "api_key": "sk-your-openai-key",
-      "api_base": "https://api.openai.com/v1"
-    }
-  ],
   "channels": {
     "telegram": {
       "enabled": false,
@@ -37,7 +29,6 @@
       "request_timeout_seconds": 120
     },
     "openai": {
-      "api_key_env": "OPENAI_API_KEY",
       "base_url": "",
       "organization": "",
       "project": "",

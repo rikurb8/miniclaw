@@ -10,7 +10,6 @@ import (
 
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
-	ModelList []ModelConfig   `json:"model_list"`
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers"`
 	Tools     ToolsConfig     `json:"tools,omitempty"`
@@ -54,18 +53,10 @@ type OpenCodeProviderConfig struct {
 }
 
 type OpenAIProviderConfig struct {
-	APIKeyEnv             string `json:"api_key_env"`
 	BaseURL               string `json:"base_url"`
 	Organization          string `json:"organization"`
 	Project               string `json:"project"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
-}
-
-type ModelConfig struct {
-	ModelName string `json:"model_name"`
-	Model     string `json:"model"`
-	APIKey    string `json:"api_key"`
-	APIBase   string `json:"api_base"`
 }
 
 type ChannelsConfig struct {

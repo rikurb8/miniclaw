@@ -25,9 +25,9 @@ type Client struct {
 
 func New(cfg *config.Config) (*Client, error) {
 	providerCfg := cfg.Providers.OpenAI
-	apiKey := resolveAPIKey(providerCfg)
+	apiKey := resolveAPIKey()
 	if apiKey == "" {
-		return nil, errors.New("providers.openai.api_key_env is required or OPENAI_API_KEY must be set")
+		return nil, errors.New("OPENAI_API_KEY must be set")
 	}
 
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
@@ -171,13 +171,7 @@ func (c *Client) withTimeout(ctx context.Context) (context.Context, context.Canc
 	return context.WithTimeout(ctx, c.requestTimeout)
 }
 
-func resolveAPIKey(cfg config.OpenAIProviderConfig) string {
-	if apiKeyEnv := strings.TrimSpace(cfg.APIKeyEnv); apiKeyEnv != "" {
-		if apiKey := strings.TrimSpace(os.Getenv(apiKeyEnv)); apiKey != "" {
-			return apiKey
-		}
-	}
-
+func resolveAPIKey() string {
 	return strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 }
 

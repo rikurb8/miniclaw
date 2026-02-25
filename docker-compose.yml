@@ -1,0 +1,17 @@
+services:
+  miniclaw:
+    build:
+      context: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MINICLAW_CONFIG: /app/config/config.json
+    volumes:
+      - ./config:/app/config:ro
+      - miniclaw_data:/root/.miniclaw
+    stdin_open: true
+    tty: true
+
+volumes:
+  miniclaw_data:
