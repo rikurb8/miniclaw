@@ -12,12 +12,14 @@ import (
 
 type PromptFunc func(ctx context.Context, prompt string) (providertypes.PromptResult, error)
 
+// RuntimeInfo renders runtime identity metadata in the interactive header.
 type RuntimeInfo struct {
 	AgentType string
 	Provider  string
 	Model     string
 }
 
+// RunInteractive starts the full-screen interactive chat UI.
 func RunInteractive(ctx context.Context, promptFn PromptFunc, info RuntimeInfo) error {
 	model := newModel(ctx, promptFn, modeInteractive, "", info)
 	program := tea.NewProgram(model)
@@ -31,6 +33,7 @@ func RunInteractive(ctx context.Context, promptFn PromptFunc, info RuntimeInfo) 
 	return nil
 }
 
+// RunOneShot sends one prompt and exits after rendering the response.
 func RunOneShot(ctx context.Context, promptFn PromptFunc, prompt string) error {
 	model := newModel(ctx, promptFn, modeOneShot, prompt, RuntimeInfo{})
 	program := tea.NewProgram(model)
@@ -38,6 +41,7 @@ func RunOneShot(ctx context.Context, promptFn PromptFunc, prompt string) error {
 	return err
 }
 
+// renderGoodbyeBanner returns the final banner printed after interactive exit.
 func renderGoodbyeBanner() string {
 	style := lipgloss.NewStyle().
 		Bold(true).

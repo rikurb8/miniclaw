@@ -35,6 +35,7 @@ type promptResultMsg struct {
 
 type bootTickMsg struct{}
 
+// model is the Bubble Tea state container for chat UI rendering and interaction.
 type model struct {
 	ctx          context.Context
 	promptFn     PromptFunc
@@ -60,6 +61,7 @@ type model struct {
 	usageTotal int64
 }
 
+// newModel initializes chat UI state for interactive or one-shot mode.
 func newModel(ctx context.Context, promptFn PromptFunc, runMode mode, prompt string, info RuntimeInfo) *model {
 	spin := spinner.New()
 	spin.Spinner = spinner.Points
@@ -275,6 +277,7 @@ func (m *model) resizeComponents() {
 	m.input.Width = w - 2
 }
 
+// refreshViewport rebuilds transcript cards and keeps scroll position stable.
 func (m *model) refreshViewport(forceBottom bool) {
 	previousOffset := m.viewport.YOffset
 	var sections []string
@@ -363,6 +366,7 @@ func (m *model) oneShotView() string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...) + "\n\n"
 }
 
+// bootView renders the startup animation before interactive input is enabled.
 func (m *model) bootView() string {
 	header := m.theme.header.Width(m.width - 2).Render("📟 MiniClaw Command Center")
 	meta := m.theme.headerMeta.Render("boot sequence")
@@ -404,6 +408,7 @@ func bootTickCmd() tea.Cmd {
 	})
 }
 
+// handleViewportKey applies scroll/navigation shortcuts and follow mode updates.
 func (m *model) handleViewportKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "pgup", "ctrl+b", "alt+up", "ctrl+up":
@@ -438,6 +443,7 @@ func bootScriptLines() []string {
 	}
 }
 
+// sendPromptCmd wraps prompt execution as an async Bubble Tea command.
 func sendPromptCmd(ctx context.Context, promptFn PromptFunc, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		result, err := promptFn(ctx, prompt)

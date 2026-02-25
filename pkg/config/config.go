@@ -14,6 +14,7 @@ const (
 	envTelegramAllowFrom = "TELEGRAM_ALLOW_FROM"
 )
 
+// Config is the root runtime configuration loaded from config.json.
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Channels  ChannelsConfig  `json:"channels"`
@@ -25,16 +26,19 @@ type Config struct {
 	Logging   LoggingConfig   `json:"logging,omitempty"`
 }
 
+// LoggingConfig controls structured log output format and verbosity.
 type LoggingConfig struct {
 	Format    string `json:"format,omitempty"`
 	Level     string `json:"level,omitempty"`
 	AddSource bool   `json:"add_source,omitempty"`
 }
 
+// AgentsConfig contains agent runtime defaults.
 type AgentsConfig struct {
 	Defaults AgentDefaults `json:"defaults"`
 }
 
+// AgentDefaults describes default model/runtime settings for new agent instances.
 type AgentDefaults struct {
 	Type                string  `json:"type"`
 	Workspace           string  `json:"workspace"`
@@ -46,11 +50,13 @@ type AgentDefaults struct {
 	MaxToolIterations   int     `json:"max_tool_iterations"`
 }
 
+// ProvidersConfig stores per-provider connection settings.
 type ProvidersConfig struct {
 	OpenCode OpenCodeProviderConfig `json:"opencode"`
 	OpenAI   OpenAIProviderConfig   `json:"openai"`
 }
 
+// OpenCodeProviderConfig configures the OpenCode provider client.
 type OpenCodeProviderConfig struct {
 	BaseURL               string `json:"base_url"`
 	Username              string `json:"username"`
@@ -58,6 +64,7 @@ type OpenCodeProviderConfig struct {
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 }
 
+// OpenAIProviderConfig configures the OpenAI provider client.
 type OpenAIProviderConfig struct {
 	BaseURL               string `json:"base_url"`
 	Organization          string `json:"organization"`
@@ -65,10 +72,12 @@ type OpenAIProviderConfig struct {
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 }
 
+// ChannelsConfig stores transport adapter settings.
 type ChannelsConfig struct {
 	Telegram TelegramConfig `json:"telegram"`
 }
 
+// TelegramConfig configures Telegram channel integration.
 type TelegramConfig struct {
 	Enabled   bool     `json:"enabled"`
 	Token     string   `json:"token"`
@@ -76,6 +85,7 @@ type TelegramConfig struct {
 	AllowFrom []string `json:"allow_from"`
 }
 
+// ToolsConfig groups optional tool-system configuration.
 type ToolsConfig struct {
 	Web    WebToolsConfig `json:"web"`
 	Cron   CronConfig     `json:"cron"`
@@ -83,31 +93,37 @@ type ToolsConfig struct {
 	Skills SkillsConfig   `json:"skills"`
 }
 
+// WebToolsConfig configures web/search providers for tool usage.
 type WebToolsConfig struct {
 	Brave      SearchProviderConfig `json:"brave"`
 	DuckDuckGo SearchProviderConfig `json:"duckduckgo"`
 	Perplexity SearchProviderConfig `json:"perplexity"`
 }
 
+// SearchProviderConfig configures one external search provider.
 type SearchProviderConfig struct {
 	Enabled    bool   `json:"enabled"`
 	APIKey     string `json:"api_key"`
 	MaxResults int    `json:"max_results"`
 }
 
+// CronConfig configures cron/tool execution limits.
 type CronConfig struct {
 	ExecTimeoutMinutes int `json:"exec_timeout_minutes"`
 }
 
+// ExecConfig configures local command execution safety behavior.
 type ExecConfig struct {
 	EnableDenyPatterns bool     `json:"enable_deny_patterns"`
 	CustomDenyPatterns []string `json:"custom_deny_patterns"`
 }
 
+// SkillsConfig configures external skill registries.
 type SkillsConfig struct {
 	Registries map[string]RegistryConfig `json:"registries"`
 }
 
+// RegistryConfig describes one skill-registry endpoint contract.
 type RegistryConfig struct {
 	Enabled      bool   `json:"enabled"`
 	BaseURL      string `json:"base_url"`
@@ -116,21 +132,25 @@ type RegistryConfig struct {
 	DownloadPath string `json:"download_path"`
 }
 
+// HeartbeatConfig controls periodic prompt queue draining.
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"`
 	Interval int  `json:"interval"`
 }
 
+// DevicesConfig controls optional device-monitoring features.
 type DevicesConfig struct {
 	Enabled    bool `json:"enabled"`
 	MonitorUSB bool `json:"monitor_usb"`
 }
 
+// GatewayConfig configures HTTP gateway bind settings.
 type GatewayConfig struct {
 	Host string `json:"host"`
 	Port int    `json:"port"`
 }
 
+// LoadConfig resolves config.json, unmarshals it, and applies environment overrides.
 func LoadConfig() (*Config, error) {
 	configPath, err := findConfigPath()
 	if err != nil {
@@ -152,6 +172,7 @@ func LoadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
+// applyEnvOverrides injects selected env-driven settings on top of file config.
 func applyEnvOverrides(cfg *Config) {
 	if cfg == nil {
 		return
@@ -166,6 +187,7 @@ func applyEnvOverrides(cfg *Config) {
 	}
 }
 
+// parseCSV splits comma-separated values and returns a trimmed compact slice.
 func parseCSV(input string) []string {
 	parts := strings.Split(input, ",")
 	clean := make([]string, 0, len(parts))
@@ -180,6 +202,9 @@ func parseCSV(input string) []string {
 	return slices.Clip(clean)
 }
 
+// findConfigPath resolves the active config file location.
+//
+// Precedence is MINICLAW_CONFIG first, then cwd-local fallback paths.
 func findConfigPath() (string, error) {
 	if value := strings.TrimSpace(os.Getenv("MINICLAW_CONFIG")); value != "" {
 		if info, err := os.Stat(value); err == nil && !info.IsDir() {

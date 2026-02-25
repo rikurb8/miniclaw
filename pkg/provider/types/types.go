@@ -1,10 +1,12 @@
 package types
 
+// PromptResult is the normalized provider response payload.
 type PromptResult struct {
 	Text     string
 	Metadata PromptMetadata
 }
 
+// PromptMetadata carries provider/model identity and optional usage accounting.
 type PromptMetadata struct {
 	Provider string
 	Model    string
@@ -12,6 +14,7 @@ type PromptMetadata struct {
 	Usage    *TokenUsage
 }
 
+// TokenUsage captures token accounting across providers.
 type TokenUsage struct {
 	InputTokens         int64
 	OutputTokens        int64
@@ -21,6 +24,7 @@ type TokenUsage struct {
 	CacheReadTokens     int64
 }
 
+// IsZero reports whether all token counters are unset/zero.
 func (u TokenUsage) IsZero() bool {
 	return u.InputTokens == 0 &&
 		u.OutputTokens == 0 &&

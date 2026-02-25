@@ -23,6 +23,7 @@ type Client struct {
 	requestTimeout time.Duration
 }
 
+// New constructs an OpenAI provider client from config/env.
 func New(cfg *config.Config) (*Client, error) {
 	providerCfg := cfg.Providers.OpenAI
 	apiKey := resolveAPIKey()
@@ -52,6 +53,7 @@ func New(cfg *config.Config) (*Client, error) {
 	}, nil
 }
 
+// Health performs a lightweight provider connectivity check.
 func (c *Client) Health(ctx context.Context) error {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -68,6 +70,7 @@ func (c *Client) Health(ctx context.Context) error {
 	return nil
 }
 
+// CreateSession creates a new OpenAI conversation and returns its ID.
 func (c *Client) CreateSession(ctx context.Context, title string) (string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -89,6 +92,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return strings.TrimSpace(conversation.ID), nil
 }
 
+// Prompt sends one prompt in the context of an existing conversation.
 func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -163,6 +167,7 @@ func providerLogger() *slog.Logger {
 	return slog.Default().With("component", "provider.openai")
 }
 
+// withTimeout wraps context with provider-level request timeout when configured.
 func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if c.requestTimeout <= 0 {
 		return ctx, func() {}
@@ -171,10 +176,12 @@ func (c *Client) withTimeout(ctx context.Context) (context.Context, context.Canc
 	return context.WithTimeout(ctx, c.requestTimeout)
 }
 
+// resolveAPIKey reads OPENAI_API_KEY from environment.
 func resolveAPIKey() string {
 	return strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 }
 
+// normalizeModel accepts either bare model IDs or openai/<model> references.
 func normalizeModel(model string) (string, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {

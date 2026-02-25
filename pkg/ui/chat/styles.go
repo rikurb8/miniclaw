@@ -2,6 +2,7 @@ package chat
 
 import "github.com/charmbracelet/lipgloss"
 
+// theme groups reusable styles for chat UI regions.
 type theme struct {
 	header         lipgloss.Style
 	headerMeta     lipgloss.Style
@@ -23,6 +24,7 @@ type theme struct {
 	viewport       lipgloss.Style
 }
 
+// defaultTheme defines the retro terminal visual palette used by chat UI.
 func defaultTheme() theme {
 	return theme{
 		header: lipgloss.NewStyle().

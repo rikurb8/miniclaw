@@ -11,12 +11,14 @@ import (
 	providertypes "miniclaw/pkg/provider/types"
 )
 
+// Client is the provider-agnostic contract used by agent/runtime layers.
 type Client interface {
 	Health(ctx context.Context) error
 	CreateSession(ctx context.Context, title string) (string, error)
 	Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error)
 }
 
+// New resolves the configured provider and returns the matching client.
 func New(cfg *config.Config) (Client, error) {
 	providerID := cfg.Agents.Defaults.Provider
 	if providerID == "" {

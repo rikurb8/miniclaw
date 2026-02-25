@@ -23,11 +23,13 @@ type Client struct {
 	requestTimeout time.Duration
 }
 
+// healthResponse models the OpenCode health endpoint payload.
 type healthResponse struct {
 	Healthy bool   `json:"healthy"`
 	Version string `json:"version"`
 }
 
+// New constructs an OpenCode provider client from config.
 func New(cfg *config.Config) (*Client, error) {
 	baseURL := strings.TrimSpace(cfg.Providers.OpenCode.BaseURL)
 	if baseURL == "" {
@@ -47,6 +49,7 @@ func New(cfg *config.Config) (*Client, error) {
 	}, nil
 }
 
+// Health performs a provider health endpoint check.
 func (c *Client) Health(ctx context.Context) error {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -67,6 +70,7 @@ func (c *Client) Health(ctx context.Context) error {
 	return nil
 }
 
+// CreateSession creates a provider session and returns its ID.
 func (c *Client) CreateSession(ctx context.Context, title string) (string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -93,6 +97,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return session.ID, nil
 }
 
+// Prompt sends one prompt within an existing OpenCode session.
 func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
 	_ = systemPrompt
 
@@ -171,6 +176,7 @@ func providerLogger() *slog.Logger {
 	return slog.Default().With("component", "provider.opencode")
 }
 
+// withTimeout wraps context with provider-level request timeout when configured.
 func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if c.requestTimeout <= 0 {
 		return ctx, func() {}
@@ -178,6 +184,7 @@ func (c *Client) withTimeout(ctx context.Context) (context.Context, context.Canc
 	return context.WithTimeout(ctx, c.requestTimeout)
 }
 
+// buildBasicAuthHeader builds a Basic auth header from configured credentials.
 func buildBasicAuthHeader(cfg config.OpenCodeProviderConfig) (string, bool) {
 	passwordEnv := strings.TrimSpace(cfg.PasswordEnv)
 	if passwordEnv == "" {
@@ -198,6 +205,7 @@ func buildBasicAuthHeader(cfg config.OpenCodeProviderConfig) (string, bool) {
 	return "Basic " + token, true
 }
 
+// parseModelRef parses provider/model routing hints.
 func parseModelRef(input string) (providerID string, modelID string, ok bool) {
 	// Opencode accepts provider/model references when explicit routing is needed.
 	parts := strings.SplitN(strings.TrimSpace(input), "/", 2)
@@ -214,6 +222,7 @@ func parseModelRef(input string) (providerID string, modelID string, ok bool) {
 	return providerID, modelID, true
 }
 
+// extractText merges text parts into a single response payload.
 func extractText(parts []sdk.Part) string {
 	var lines []string
 	for _, part := range parts {
@@ -228,6 +237,7 @@ func extractText(parts []sdk.Part) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+// tokenCount rounds provider float token values to integer counters.
 func tokenCount(value float64) int64 {
 	if value <= 0 {
 		return 0

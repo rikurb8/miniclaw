@@ -21,6 +21,7 @@ type languageModelProvider interface {
 	LanguageModel(ctx context.Context, modelID string) (core.LanguageModel, error)
 }
 
+// Client is an in-memory session provider powered by charm.land/fantasy.
 type Client struct {
 	provider        languageModelProvider
 	requestTimeout  time.Duration
@@ -34,6 +35,7 @@ type Client struct {
 	sessions      map[string][]core.Message
 }
 
+// New constructs a fantasy-backed OpenAI provider client.
 func New(cfg *config.Config) (*Client, error) {
 	if strings.TrimSpace(cfg.Agents.Defaults.Provider) != "openai" {
 		return nil, fmt.Errorf("fantasy-agent currently supports only provider openai, got %q", cfg.Agents.Defaults.Provider)
@@ -87,6 +89,7 @@ func New(cfg *config.Config) (*Client, error) {
 	return client, nil
 }
 
+// Health verifies that the configured model can be resolved.
 func (c *Client) Health(ctx context.Context) error {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -98,6 +101,7 @@ func (c *Client) Health(ctx context.Context) error {
 	return nil
 }
 
+// CreateSession allocates an in-memory session identifier.
 func (c *Client) CreateSession(ctx context.Context, title string) (string, error) {
 	// The fantasy provider keeps sessions in-memory only; title is currently informational.
 	_ = title
@@ -118,6 +122,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	return sessionID, nil
 }
 
+// Prompt executes one prompt against the selected model and updates session history.
 func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, model string, agent string, systemPrompt string) (providertypes.PromptResult, error) {
 	_ = agent
 
@@ -221,6 +226,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 	}, nil
 }
 
+// withTimeout wraps context with provider-level request timeout when configured.
 func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if c.requestTimeout <= 0 {
 		return ctx, func() {}
@@ -229,6 +235,7 @@ func (c *Client) withTimeout(ctx context.Context) (context.Context, context.Canc
 	return context.WithTimeout(ctx, c.requestTimeout)
 }
 
+// sessionHistory returns a defensive copy of session messages.
 func (c *Client) sessionHistory(sessionID string) ([]core.Message, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -244,6 +251,7 @@ func (c *Client) sessionHistory(sessionID string) ([]core.Message, bool) {
 	return copyHistory, true
 }
 
+// appendSessionMessages appends messages to one tracked in-memory session.
 func (c *Client) appendSessionMessages(sessionID string, messages ...core.Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -257,10 +265,12 @@ func (c *Client) appendSessionMessages(sessionID string, messages ...core.Messag
 	c.sessions[sessionID] = history
 }
 
+// resolveAPIKey reads OPENAI_API_KEY from environment.
 func resolveAPIKey() string {
 	return strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 }
 
+// normalizeOpenAIModel accepts bare model IDs or openai/<model> references.
 func normalizeOpenAIModel(model string) (string, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -284,6 +294,7 @@ func normalizeOpenAIModel(model string) (string, error) {
 	return modelID, nil
 }
 
+// extractText collects non-empty text response parts into a single string.
 func extractText(content core.ResponseContent) string {
 	lines := make([]string, 0)
 	for _, part := range content {
@@ -306,6 +317,7 @@ func extractText(content core.ResponseContent) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+// generateWithFantasyAgent delegates prompt generation to fantasy runtime.
 func generateWithFantasyAgent(ctx context.Context, model core.LanguageModel, call core.AgentCall) (*core.AgentResult, error) {
 	runtime := core.NewAgent(model)
 	return runtime.Generate(ctx, call)

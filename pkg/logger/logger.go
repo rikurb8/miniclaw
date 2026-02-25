@@ -23,6 +23,7 @@ const (
 	defaultLevel  = "info"
 )
 
+// LogEntry is the canonical JSON log envelope used by the custom slog handler.
 type LogEntry struct {
 	Level     string         `json:"level"`
 	Timestamp string         `json:"timestamp"`
@@ -32,6 +33,7 @@ type LogEntry struct {
 	Caller    string         `json:"caller,omitempty"`
 }
 
+// entryHandler implements slog.Handler for MiniClaw JSON log output.
 type entryHandler struct {
 	level     slog.Level
 	addSource bool
@@ -41,6 +43,7 @@ type entryHandler struct {
 	mu        *sync.Mutex
 }
 
+// New builds an application logger from config and process-level env overrides.
 func New(cfg config.LoggingConfig) (*slog.Logger, error) {
 	return newWithWriter(cfg, os.Stderr)
 }
@@ -87,6 +90,7 @@ func newWithWriter(cfg config.LoggingConfig, writer io.Writer) (*slog.Logger, er
 	return slog.New(h), nil
 }
 
+// charmLevel maps slog levels to charm/log levels for text output mode.
 func charmLevel(level slog.Level) charmLog.Level {
 	switch {
 	case level <= slog.LevelDebug:
@@ -100,6 +104,7 @@ func charmLevel(level slog.Level) charmLog.Level {
 	}
 }
 
+// parseLevel resolves the effective log level from config and env.
 func parseLevel(input string) (slog.Level, error) {
 	levelText := strings.ToLower(strings.TrimSpace(input))
 	if value := strings.TrimSpace(os.Getenv("MINICLAW_LOG_LEVEL")); value != "" {
@@ -123,6 +128,7 @@ func parseLevel(input string) (slog.Level, error) {
 	}
 }
 
+// parseBool treats common truthy forms as true and everything else as false.
 func parseBool(input string) bool {
 	switch strings.ToLower(strings.TrimSpace(input)) {
 	case "1", "true", "yes", "on":
@@ -176,6 +182,7 @@ func (h *entryHandler) Handle(_ context.Context, record slog.Record) error {
 	return err
 }
 
+// callerFromRecord formats the source frame as "file.go:line" when available.
 func callerFromRecord(record slog.Record) string {
 	if record.PC == 0 {
 		return ""
@@ -189,6 +196,7 @@ func callerFromRecord(record slog.Record) string {
 	return fmt.Sprintf("%s:%d", filepath.Base(frame.File), frame.Line)
 }
 
+// applyAttr flattens slog attrs/groups into entry fields.
 func applyAttr(fields map[string]any, entry *LogEntry, groups []string, attr slog.Attr) {
 	attr.Value = attr.Value.Resolve()
 	if attr.Equal(slog.Attr{}) {
@@ -211,6 +219,7 @@ func applyAttr(fields map[string]any, entry *LogEntry, groups []string, attr slo
 	fields[key] = attrValue(attr.Value)
 }
 
+// attrValue converts slog values into JSON-marshallable primitives.
 func attrValue(value slog.Value) any {
 	switch value.Kind() {
 	case slog.KindString:
