@@ -71,3 +71,8 @@ Taskfile is the primary workflow for local development and CI.
 - Preserve existing architecture and naming patterns.
 - Avoid unrelated refactors in targeted fixes.
 - Add or update tests when behavior changes.
+
+## Committing
+
+- ALWAYS use semantic commits (`fix:`, `feat:`, `chore:`, `refactor:`, `docs:`, `sec:`, etc).
+- Try to keep commits to one line, only use multi-line commits when additional context is truly necessary.
