@@ -2,6 +2,9 @@
 
 Minimal operating guide for coding agents in this repository. The goal of this project is to be easy to read and reason with. Comments should be added when they provide value for the reader.
 
+## IMPORTANT PRINCIPLES
+- This is also a educational project so remember to explain clearly why changes are made
+
 ## Build/Test/Lint Commands
 
 - **CI gates**: `task ci`
