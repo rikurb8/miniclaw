@@ -22,6 +22,14 @@ import (
 
 var promptText string
 
+var newFantasyProviderClient = func(cfg *config.Config) (provider.Client, error) {
+	return providerfantasy.New(cfg)
+}
+
+var runLocalAgentRuntimeWithClientFn = runLocalAgentRuntimeWithClient
+var runSinglePromptFn = runSinglePrompt
+var runInteractiveFn = runInteractive
+
 const (
 	agentTypeGeneric  = "generic-agent"
 	agentTypeOpenCode = "opencode-agent"
@@ -87,12 +95,12 @@ func runOpenCodeAgent(prompt string, cfg *config.Config, log *slog.Logger) error
 }
 
 func runFantasyAgent(prompt string, cfg *config.Config, log *slog.Logger) error {
-	client, err := providerfantasy.New(cfg)
+	client, err := newFantasyProviderClient(cfg)
 	if err != nil {
 		return fmt.Errorf("initialize fantasy provider: %w", err)
 	}
 
-	return runLocalAgentRuntimeWithClient(prompt, cfg, log, client, agentTypeFantasy)
+	return runLocalAgentRuntimeWithClientFn(prompt, cfg, log, client, agentTypeFantasy)
 }
 
 func runLocalAgentRuntime(prompt string, cfg *config.Config, log *slog.Logger, agentType string) error {
@@ -117,11 +125,11 @@ func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog
 	}
 
 	if prompt != "" {
-		runSinglePrompt(ctx, session.Prompt, prompt)
+		runSinglePromptFn(ctx, session.Prompt, prompt)
 		return nil
 	}
 
-	runInteractive(ctx, session.Prompt, chat.RuntimeInfo{
+	runInteractiveFn(ctx, session.Prompt, chat.RuntimeInfo{
 		AgentType: agentType,
 		Provider:  strings.TrimSpace(cfg.Agents.Defaults.Provider),
 		Model:     strings.TrimSpace(cfg.Agents.Defaults.Model),
