@@ -7,6 +7,10 @@ import (
 
 const defaultBufferSize = 100
 
+// MessageBus is an in-process transport for inbound/outbound messages and runtime events.
+//
+// It is designed for local fan-in/fan-out coordination between runtime components
+// without external dependencies.
 type MessageBus struct {
 	inbound  chan InboundMessage
 	outbound chan OutboundMessage
@@ -21,6 +25,7 @@ type MessageBus struct {
 	mu sync.RWMutex
 }
 
+// NewMessageBus creates a message bus with default buffer sizing.
 func NewMessageBus() *MessageBus {
 	return &MessageBus{
 		inbound:          make(chan InboundMessage, defaultBufferSize),
@@ -31,6 +36,9 @@ func NewMessageBus() *MessageBus {
 	}
 }
 
+// PublishInbound queues one inbound message.
+//
+// It returns false when the context is canceled or when the bus has been closed.
 func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) bool {
 	if ctx == nil {
 		ctx = context.Background()
@@ -42,6 +50,7 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) bo
 	case <-mb.done:
 		return false
 	default:
+		// Preflight before send so callers fail fast after bus shutdown.
 	}
 
 	select {
@@ -54,6 +63,9 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) bo
 	}
 }
 
+// ConsumeInbound waits for one inbound message.
+//
+// It returns false when the context is canceled or when the bus has been closed.
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -69,6 +81,9 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 	}
 }
 
+// PublishOutbound queues one outbound message.
+//
+// It returns false when the context is canceled or when the bus has been closed.
 func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) bool {
 	if ctx == nil {
 		ctx = context.Background()
@@ -80,6 +95,7 @@ func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) 
 	case <-mb.done:
 		return false
 	default:
+		// Preflight before send so callers fail fast after bus shutdown.
 	}
 
 	select {
@@ -92,6 +108,9 @@ func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) 
 	}
 }
 
+// SubscribeOutbound waits for one outbound message.
+//
+// It returns false when the context is canceled or when the bus has been closed.
 func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -107,12 +126,14 @@ func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, b
 	}
 }
 
+// RegisterHandler stores a channel handler.
 func (mb *MessageBus) RegisterHandler(channel string, handler MessageHandler) {
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 	mb.handlers[channel] = handler
 }
 
+// GetHandler retrieves a previously registered channel handler.
 func (mb *MessageBus) GetHandler(channel string) (MessageHandler, bool) {
 	mb.mu.RLock()
 	defer mb.mu.RUnlock()
@@ -120,6 +141,7 @@ func (mb *MessageBus) GetHandler(channel string) (MessageHandler, bool) {
 	return handler, ok
 }
 
+// Close shuts down the bus and closes all event subscriptions.
 func (mb *MessageBus) Close() {
 	mb.closeOnce.Do(func() {
 		close(mb.done)

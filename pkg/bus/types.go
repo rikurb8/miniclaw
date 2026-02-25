@@ -1,5 +1,6 @@
 package bus
 
+// InboundMessage is a normalized user/system message entering runtime processing.
 type InboundMessage struct {
 	Channel    string            `json:"channel"`
 	SenderID   string            `json:"sender_id"`
@@ -10,6 +11,7 @@ type InboundMessage struct {
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
+// OutboundMessage is a normalized message produced by runtime processing.
 type OutboundMessage struct {
 	Channel    string            `json:"channel"`
 	ChatID     string            `json:"chat_id"`
@@ -19,4 +21,5 @@ type OutboundMessage struct {
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
+// MessageHandler handles one inbound message for a specific channel.
 type MessageHandler func(InboundMessage) error

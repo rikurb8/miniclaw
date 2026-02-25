@@ -9,11 +9,15 @@ import (
 type EventType string
 
 const (
-	EventPromptReceived  EventType = "prompt_received"
+	// EventPromptReceived is emitted when a prompt enters the runtime flow.
+	EventPromptReceived EventType = "prompt_received"
+	// EventPromptCompleted is emitted when prompt execution completes successfully.
 	EventPromptCompleted EventType = "prompt_completed"
-	EventPromptFailed    EventType = "prompt_failed"
+	// EventPromptFailed is emitted when prompt execution ends with an error.
+	EventPromptFailed EventType = "prompt_failed"
 )
 
+// Event is a lightweight runtime signal broadcast to subscribers.
 type Event struct {
 	Type       EventType         `json:"type"`
 	At         time.Time         `json:"at"`
@@ -25,6 +29,9 @@ type Event struct {
 	Error      string            `json:"error,omitempty"`
 }
 
+// PublishEvent broadcasts one event to all current subscribers.
+//
+// Delivery is best effort: slow subscribers may miss events instead of blocking publishers.
 func (mb *MessageBus) PublishEvent(ctx context.Context, event Event) bool {
 	if ctx == nil {
 		ctx = context.Background()
@@ -60,6 +67,9 @@ func (mb *MessageBus) PublishEvent(ctx context.Context, event Event) bool {
 	return true
 }
 
+// SubscribeEvents registers a buffered event subscription.
+//
+// It returns the subscription channel and an idempotent unsubscribe function.
 func (mb *MessageBus) SubscribeEvents(ctx context.Context, buffer int) (<-chan Event, func()) {
 	if ctx == nil {
 		ctx = context.Background()
