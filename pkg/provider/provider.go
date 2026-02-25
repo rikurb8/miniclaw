@@ -23,7 +23,7 @@ func New(cfg *config.Config) (Client, error) {
 		providerID = "opencode"
 	}
 
-	slog.Default().With("component", "provider.factory").Debug("resolving provider client", "provider", providerID)
+	slog.Default().With("component", "provider.factory").Debug("Resolving provider client", "provider", providerID)
 
 	switch providerID {
 	case "opencode":

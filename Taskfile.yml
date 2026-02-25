@@ -1,0 +1,86 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  BINARY: miniclaw
+
+tasks:
+  ci:
+    desc: Run all quality gates
+    cmds:
+      - task: fmt
+      - task: mod
+      - task: vet
+      - task: test
+      - task: build
+
+  lint:
+    desc: Run static checks
+    cmds:
+      - task: vet
+
+  lint:fix:
+    desc: Format code and run static checks
+    cmds:
+      - task: fmt:fix
+      - task: vet
+
+  fmt:
+    desc: Check Go formatting
+    cmds:
+      - |
+        unformatted=$(gofmt -l $(git ls-files '*.go'))
+        if [ -n "$unformatted" ]; then
+          echo "The following files need gofmt:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+  fmt:fix:
+    desc: Format all Go files
+    cmds:
+      - gofmt -w $(git ls-files '*.go')
+
+  mod:
+    desc: Verify go.mod/go.sum are tidy
+    cmds:
+      - go mod tidy
+      - git diff --exit-code -- go.mod go.sum
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./... {{.CLI_ARGS}}
+
+  build:
+    desc: Build binary
+    cmds:
+      - go build -o {{.BINARY}} .
+
+  run:
+    desc: Run app
+    cmds:
+      - go run . {{.CLI_ARGS}}
+
+  dev:
+    desc: Run app in development mode
+    env:
+      MINICLAW_LOG_LEVEL: debug
+    cmds:
+      - go run . {{.CLI_ARGS}}
+
+  clean:
+    desc: Remove built binary
+    cmds:
+      - rm -f {{.BINARY}}
+
+  modernize:
+    desc: Run modernize analyzer with fixes
+    cmds:
+      - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix -test ./...

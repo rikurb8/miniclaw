@@ -8,6 +8,18 @@ Experimental AI assistant project, work in progress
 For a high-level architecture and key concepts walkthrough, see `docs/OVERVIEW.md`.
 For runtime type details, see `docs/AGENTS.md`.
 
+## Development Commands
+
+This repository now uses Taskfile as the primary local workflow.
+
+- Run CI gates: `task ci`
+- Format check: `task fmt`
+- Format fix: `task fmt:fix`
+- Vet: `task vet`
+- Test: `task test`
+- Build: `task build`
+- Run: `task run -- agent --prompt "hello"`
+
 ## Agent types
 
 MiniClaw supports configurable agent runtimes through `agents.defaults.type`:

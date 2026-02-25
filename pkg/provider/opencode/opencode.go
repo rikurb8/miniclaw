@@ -52,18 +52,18 @@ func (c *Client) Health(ctx context.Context) error {
 	defer cancel()
 	log := providerLogger().With("operation", "health")
 	startedAt := time.Now()
-	log.Debug("provider request started")
+	log.Debug("Provider request started")
 
 	var response healthResponse
 	if err := c.client.Get(ctx, "/global/health", nil, &response); err != nil {
-		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
+		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return fmt.Errorf("health check failed: %w", err)
 	}
 	if !response.Healthy {
-		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "server unhealthy")
+		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "server unhealthy")
 		return errors.New("opencode server reported unhealthy status")
 	}
-	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "version", response.Version)
+	log.Debug("Provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "version", response.Version)
 	return nil
 }
 
@@ -72,7 +72,7 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 	defer cancel()
 	log := providerLogger().With("operation", "create_session")
 	startedAt := time.Now()
-	log.Debug("provider request started", "title_length", len(strings.TrimSpace(title)))
+	log.Debug("Provider request started", "title_length", len(strings.TrimSpace(title)))
 
 	params := sdk.SessionNewParams{}
 	if strings.TrimSpace(title) != "" {
@@ -81,14 +81,14 @@ func (c *Client) CreateSession(ctx context.Context, title string) (string, error
 
 	session, err := c.client.Session.New(ctx, params)
 	if err != nil {
-		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
+		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return "", fmt.Errorf("create session failed: %w", err)
 	}
 	if session.ID == "" {
-		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "empty session id")
+		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "empty session id")
 		return "", errors.New("create session returned empty session id")
 	}
-	log.Debug("provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "session_id", session.ID)
+	log.Debug("Provider request completed", "duration_ms", time.Since(startedAt).Milliseconds(), "session_id", session.ID)
 
 	return session.ID, nil
 }
@@ -98,7 +98,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 	defer cancel()
 	log := providerLogger().With("operation", "prompt")
 	startedAt := time.Now()
-	log.Debug("provider request started",
+	log.Debug("Provider request started",
 		"session_id", strings.TrimSpace(sessionID),
 		"model", strings.TrimSpace(model),
 		"agent", strings.TrimSpace(agent),
@@ -127,16 +127,16 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 
 	response, err := c.client.Session.Prompt(ctx, sessionID, params)
 	if err != nil {
-		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
+		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
 		return providertypes.PromptResult{}, fmt.Errorf("prompt failed: %w", err)
 	}
 
 	text := extractText(response.Parts)
 	if text == "" {
-		log.Debug("provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "no text parts")
+		log.Debug("Provider request failed", "duration_ms", time.Since(startedAt).Milliseconds(), "error", "no text parts")
 		return providertypes.PromptResult{}, errors.New("prompt succeeded but returned no text parts")
 	}
-	log.Debug("provider request completed",
+	log.Debug("Provider request completed",
 		"duration_ms", time.Since(startedAt).Milliseconds(),
 		"response_length", len(text),
 		"parts_count", len(response.Parts),
@@ -197,6 +197,7 @@ func buildBasicAuthHeader(cfg config.OpenCodeProviderConfig) (string, bool) {
 }
 
 func parseModelRef(input string) (providerID string, modelID string, ok bool) {
+	// Opencode accepts provider/model references when explicit routing is needed.
 	parts := strings.SplitN(strings.TrimSpace(input), "/", 2)
 	if len(parts) != 2 {
 		return "", "", false

@@ -19,7 +19,7 @@ func TestLoggerJSONEntryShape(t *testing.T) {
 		t.Fatalf("newWithWriter error: %v", err)
 	}
 
-	log.With("component", "cmd.agent").Info("prompt event", "request_id", "42", "ok", true)
+	log.With("component", "cmd.agent").Info("Prompt event", "request_id", "42", "ok", true)
 
 	line := strings.TrimSpace(out.String())
 	if line == "" {
@@ -34,8 +34,8 @@ func TestLoggerJSONEntryShape(t *testing.T) {
 	if entry.Level != "info" {
 		t.Fatalf("level = %q, want %q", entry.Level, "info")
 	}
-	if entry.Message != "prompt event" {
-		t.Fatalf("message = %q, want %q", entry.Message, "prompt event")
+	if entry.Message != "Prompt event" {
+		t.Fatalf("message = %q, want %q", entry.Message, "Prompt event")
 	}
 	if entry.Component != "cmd.agent" {
 		t.Fatalf("component = %q, want %q", entry.Component, "cmd.agent")
@@ -60,12 +60,12 @@ func TestLoggerLevelFiltering(t *testing.T) {
 		t.Fatalf("newWithWriter error: %v", err)
 	}
 
-	log.Info("ignored")
+	log.Info("Ignored")
 	if got := strings.TrimSpace(out.String()); got != "" {
 		t.Fatalf("expected no output for info, got %q", got)
 	}
 
-	log.Error("kept")
+	log.Error("Kept")
 	if got := strings.TrimSpace(out.String()); got == "" {
 		t.Fatal("expected output for error")
 	}
@@ -82,7 +82,7 @@ func TestLoggerEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("newWithWriter error: %v", err)
 	}
 
-	log.Debug("debug enabled", "component", "test")
+	log.Debug("Debug enabled", "component", "test")
 	line := strings.TrimSpace(out.String())
 	if line == "" {
 		t.Fatal("expected debug output with env override")
@@ -101,7 +101,7 @@ func TestLoggerDefaultsToTextFormat(t *testing.T) {
 		t.Fatalf("newWithWriter error: %v", err)
 	}
 
-	log.Info("default format")
+	log.Info("Default format")
 	line := strings.TrimSpace(out.String())
 	if line == "" {
 		t.Fatal("expected log output")

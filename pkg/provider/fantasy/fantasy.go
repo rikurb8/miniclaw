@@ -99,6 +99,7 @@ func (c *Client) Health(ctx context.Context) error {
 }
 
 func (c *Client) CreateSession(ctx context.Context, title string) (string, error) {
+	// The fantasy provider keeps sessions in-memory only; title is currently informational.
 	_ = title
 
 	ctx, cancel := c.withTimeout(ctx)
@@ -225,6 +226,7 @@ func (c *Client) sessionHistory(sessionID string) ([]core.Message, bool) {
 		return nil, false
 	}
 
+	// Copy so callers cannot mutate shared session history.
 	copyHistory := make([]core.Message, len(history))
 	copy(copyHistory, history)
 	return copyHistory, true

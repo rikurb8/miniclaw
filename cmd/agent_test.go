@@ -331,8 +331,8 @@ func TestLogStartupConfiguration(t *testing.T) {
 	}
 
 	startupRecord := recorder.records[0]
-	if startupRecord.Message != "agent startup" {
-		t.Fatalf("startup message = %q, want %q", startupRecord.Message, "agent startup")
+	if startupRecord.Message != "Agent startup" {
+		t.Fatalf("startup message = %q, want %q", startupRecord.Message, "Agent startup")
 	}
 	if got := recordAttrValue(startupRecord, "prompt_mode"); got != "single_prompt" {
 		t.Fatalf("prompt_mode = %v, want %q", got, "single_prompt")
@@ -342,8 +342,8 @@ func TestLogStartupConfiguration(t *testing.T) {
 	}
 
 	loggingRecord := recorder.records[1]
-	if loggingRecord.Message != "logging configuration" {
-		t.Fatalf("logging message = %q, want %q", loggingRecord.Message, "logging configuration")
+	if loggingRecord.Message != "Logging configuration" {
+		t.Fatalf("logging message = %q, want %q", loggingRecord.Message, "Logging configuration")
 	}
 	if got := recordAttrValue(loggingRecord, "log_format"); got != "text" {
 		t.Fatalf("log_format = %v, want %q", got, "text")

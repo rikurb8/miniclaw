@@ -24,10 +24,12 @@ func (i *Instance) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-i.queueWakeChannel():
+			// Process immediately when new work arrives.
 			if err := i.processQueuedPrompts(ctx); err != nil {
 				return err
 			}
 		case <-ticker.C:
+			// Periodic draining is a safety net in case no wake signal is observed.
 			if err := i.processQueuedPrompts(ctx); err != nil {
 				return err
 			}

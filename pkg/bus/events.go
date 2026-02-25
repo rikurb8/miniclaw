@@ -53,6 +53,7 @@ func (mb *MessageBus) PublishEvent(ctx context.Context, event Event) bool {
 		select {
 		case ch <- event:
 		default:
+			// Drop instead of blocking the publisher on slow subscribers.
 		}
 	}
 

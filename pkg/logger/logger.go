@@ -201,6 +201,7 @@ func applyAttr(fields map[string]any, entry *LogEntry, groups []string, attr slo
 	}
 
 	if key == "component" {
+		// Keep component as a top-level field for stable log filtering.
 		if value, ok := attr.Value.Any().(string); ok {
 			entry.Component = value
 			return

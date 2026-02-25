@@ -75,7 +75,7 @@ var agentCmd = &cobra.Command{
 		}
 
 		if err := runAgentByType(agentType, prompt, cfg, log); err != nil {
-			log.Error("agent runtime failed", "error", err)
+			log.Error("Agent runtime failed", "error", err)
 		}
 	},
 }
@@ -127,7 +127,7 @@ func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog
 		return fmt.Errorf("start session: %w", err)
 	}
 	if shouldShowRuntimeLogs(cfg.Logging.Level) {
-		log.Info("session started")
+		log.Info("Session started")
 	}
 
 	promptCtx := ctx
@@ -144,7 +144,7 @@ func runLocalAgentRuntimeWithClient(prompt string, cfg *config.Config, log *slog
 		select {
 		case loopErr := <-loopErrCh:
 			if loopErr != nil {
-				log.Error("heartbeat loop failed", "error", loopErr)
+				log.Error("Heartbeat loop failed", "error", loopErr)
 			}
 		default:
 		}
@@ -179,7 +179,7 @@ func logStartupConfiguration(log *slog.Logger, cfg *config.Config, prompt string
 		promptMode = "single_prompt"
 	}
 
-	log.Info("agent startup",
+	log.Info("Agent startup",
 		"prompt_mode", promptMode,
 		"provider", cfg.Agents.Defaults.Provider,
 		"model", cfg.Agents.Defaults.Model,
@@ -192,7 +192,7 @@ func logStartupConfiguration(log *slog.Logger, cfg *config.Config, prompt string
 		"heartbeat_interval_seconds", cfg.Heartbeat.Interval,
 	)
 
-	log.Info("logging configuration",
+	log.Info("Logging configuration",
 		"log_format", defaultString(cfg.Logging.Format, "text"),
 		"log_level", defaultString(cfg.Logging.Level, "info"),
 		"log_add_source", cfg.Logging.AddSource,
@@ -250,7 +250,7 @@ func runSinglePrompt(ctx context.Context, messageBus *bus.MessageBus, prompt str
 	}
 
 	if err := chat.RunOneShot(ctx, promptFn, prompt); err != nil {
-		agentComponentLogger().Error("one-shot ui failed", "error", err)
+		agentComponentLogger().Error("One-shot UI failed", "error", err)
 	}
 }
 
@@ -260,7 +260,7 @@ func runInteractive(ctx context.Context, messageBus *bus.MessageBus, info chat.R
 	}
 
 	if err := chat.RunInteractive(ctx, promptFn, info); err != nil {
-		agentComponentLogger().Error("interactive ui failed", "error", err)
+		agentComponentLogger().Error("Interactive UI failed", "error", err)
 	}
 }
 
@@ -465,13 +465,13 @@ func logEvent(log *slog.Logger, event bus.Event) {
 
 	switch event.Type {
 	case bus.EventPromptFailed:
-		log.Error("prompt event", append(attrs, "error", event.Error)...)
+		log.Error("Prompt event", append(attrs, "error", event.Error)...)
 	case bus.EventPromptReceived:
-		log.Info("prompt event", attrs...)
+		log.Info("Prompt event", attrs...)
 	case bus.EventPromptCompleted:
-		log.Info("prompt event", attrs...)
+		log.Info("Prompt event", attrs...)
 	default:
-		log.Debug("prompt event", attrs...)
+		log.Debug("Prompt event", attrs...)
 	}
 }
 

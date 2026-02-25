@@ -16,6 +16,7 @@ type Instance struct {
 	model     string
 	heartbeat config.HeartbeatConfig
 	memory    *Memory
+	// queueWake is a coalescing signal channel: one token means "queue has work".
 	queueWake chan struct{}
 
 	mu        sync.RWMutex
@@ -129,6 +130,7 @@ func (i *Instance) enqueuePrompt(prompt string, resultCh chan promptResult) erro
 		select {
 		case i.queueWake <- struct{}{}:
 		default:
+			// A wake signal is already pending; the queued item will be processed soon.
 		}
 	}
 	return nil
