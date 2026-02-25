@@ -12,21 +12,14 @@ import (
 	"sync"
 	"time"
 
+	agentruntime "miniclaw/pkg/agent/runtime"
 	"miniclaw/pkg/bus"
 	"miniclaw/pkg/channel"
 	"miniclaw/pkg/config"
 	"miniclaw/pkg/provider"
-	providertypes "miniclaw/pkg/provider/types"
 )
 
 const (
-	metaUsageInKey          = "usage_input_tokens"
-	metaUsageOutKey         = "usage_output_tokens"
-	metaUsageTotalKey       = "usage_total_tokens"
-	metaUsageReasonKey      = "usage_reasoning_tokens"
-	metaUsageCacheCreateKey = "usage_cache_creation_tokens"
-	metaUsageCacheReadKey   = "usage_cache_read_tokens"
-
 	defaultHealthHost = "0.0.0.0"
 	defaultHealthPort = 18790
 )
@@ -166,7 +159,7 @@ func (s *Service) handleInbound(ctx context.Context, inbound bus.InboundMessage)
 		ChatID:     inbound.ChatID,
 		SessionKey: inbound.SessionKey,
 		Content:    result.Text,
-		Metadata:   promptResultMetadata(result),
+		Metadata:   agentruntime.PromptResultMetadata(result),
 	}, nil
 }
 
@@ -317,20 +310,4 @@ func errorString(err error) string {
 	}
 
 	return err.Error()
-}
-
-func promptResultMetadata(result providertypes.PromptResult) map[string]string {
-	if result.Metadata.Usage == nil {
-		return nil
-	}
-
-	usage := result.Metadata.Usage
-	return map[string]string{
-		metaUsageInKey:          strconv.FormatInt(usage.InputTokens, 10),
-		metaUsageOutKey:         strconv.FormatInt(usage.OutputTokens, 10),
-		metaUsageTotalKey:       strconv.FormatInt(usage.TotalTokens, 10),
-		metaUsageReasonKey:      strconv.FormatInt(usage.ReasoningTokens, 10),
-		metaUsageCacheCreateKey: strconv.FormatInt(usage.CacheCreationTokens, 10),
-		metaUsageCacheReadKey:   strconv.FormatInt(usage.CacheReadTokens, 10),
-	}
 }

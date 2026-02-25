@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	agentruntime "miniclaw/pkg/agent/runtime"
 	providertypes "miniclaw/pkg/provider/types"
 )
 
@@ -29,7 +30,7 @@ func TestIsReady(t *testing.T) {
 func TestPromptResultMetadata(t *testing.T) {
 	t.Parallel()
 
-	metadata := promptResultMetadata(providertypes.PromptResult{
+	metadata := agentruntime.PromptResultMetadata(providertypes.PromptResult{
 		Metadata: providertypes.PromptMetadata{
 			Usage: &providertypes.TokenUsage{
 				InputTokens:         10,
@@ -42,10 +43,10 @@ func TestPromptResultMetadata(t *testing.T) {
 		},
 	})
 
-	if got := metadata[metaUsageInKey]; got != "10" {
+	if got := metadata[agentruntime.UsageInputTokensKey]; got != "10" {
 		t.Fatalf("input tokens = %q, want 10", got)
 	}
-	if got := metadata[metaUsageTotalKey]; got != "21" {
+	if got := metadata[agentruntime.UsageTotalTokensKey]; got != "21" {
 		t.Fatalf("total tokens = %q, want 21", got)
 	}
 }
