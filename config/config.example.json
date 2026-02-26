@@ -2,7 +2,7 @@
   "agents": {
     "defaults": {
       "type": "fantasy-agent",
-      "workspace": "~/.miniclaw/workspace",
+      "workspace": "~/.miniclaw/workspace/project",
       "restrict_to_workspace": true,
       "provider": "openai",
       "model": "openai/gpt-5.2",

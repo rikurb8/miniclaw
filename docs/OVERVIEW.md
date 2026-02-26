@@ -13,6 +13,8 @@ Agent behavior is selected by `agents.defaults.type`:
 - `opencode-agent` is a separate runtime mode for OpenCode-backed orchestration.
 - `fantasy-agent` runs prompts through `charm.land/fantasy` (currently with OpenAI provider support).
 
+For `fantasy-agent`, MiniClaw can execute workspace-bounded filesystem tools (`read_file`, `write_file`, `append_file`, `list_dir`, `edit_file`) during the model loop.
+
 ## Architecture (High Level)
 
 ### CLI agent mode
@@ -105,6 +107,18 @@ CLI input -> resolve prompt -> runtime session exists
   -> provider prompt call -> append memory -> print response
 ```
 
+### `fantasy-agent` tool loop
+
+```text
+Prompt -> Fantasy agent step
+  -> optional tool call
+  -> workspace guard validates path
+  -> filesystem service executes bounded operation
+  -> tool result fed back into next step
+  -> repeat until completion or max tool iterations
+  -> if limit reached: final no-tools summarization step
+```
+
 ### `gateway` mode
 
 ```text
@@ -118,8 +132,11 @@ Channel update -> adapter builds inbound message
 For day-to-day behavior, focus on:
 
 - `agents.defaults.type`
+- `agents.defaults.workspace`
+- `agents.defaults.restrict_to_workspace`
 - `agents.defaults.provider`
 - `agents.defaults.model`
+- `agents.defaults.max_tool_iterations`
 - `channels.telegram.*`
 - `gateway.host`
 - `gateway.port`

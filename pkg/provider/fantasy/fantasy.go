@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -15,6 +16,9 @@ import (
 
 	"miniclaw/pkg/config"
 	providertypes "miniclaw/pkg/provider/types"
+	fantasytools "miniclaw/pkg/tools/fantasy"
+	fstools "miniclaw/pkg/tools/fs"
+	"miniclaw/pkg/workspace"
 )
 
 type languageModelProvider interface {
@@ -28,7 +32,9 @@ type Client struct {
 	modelID         string
 	maxOutputTokens *int64
 	temperature     *float64
-	generate        func(context.Context, core.LanguageModel, core.AgentCall) (*core.AgentResult, error)
+	generate        func(context.Context, core.LanguageModel, core.AgentCall, []core.AgentOption) (*core.AgentResult, error)
+	tools           []core.AgentTool
+	maxToolSteps    int
 
 	mu            sync.RWMutex
 	nextSessionID uint64
@@ -37,6 +43,10 @@ type Client struct {
 
 // New constructs a fantasy-backed OpenAI provider client.
 func New(cfg *config.Config) (*Client, error) {
+	if cfg == nil {
+		return nil, errors.New("config is required")
+	}
+
 	if strings.TrimSpace(cfg.Agents.Defaults.Provider) != "openai" {
 		return nil, fmt.Errorf("fantasy-agent currently supports only provider openai, got %q", cfg.Agents.Defaults.Provider)
 	}
@@ -69,10 +79,24 @@ func New(cfg *config.Config) (*Client, error) {
 
 	requestTimeout := time.Duration(cfg.Providers.OpenAI.RequestTimeoutSeconds) * time.Second
 
+	guard, err := workspace.NewGuardWithPolicy(cfg.Agents.Defaults.Workspace, cfg.Agents.Defaults.RestrictToWorkspace)
+	if err != nil {
+		return nil, fmt.Errorf("initialize workspace guard: %w", err)
+	}
+
+	fsService := fstools.NewService(guard)
+	tools := fantasytools.BuildFSTools(fsService, guard)
+	maxToolSteps := cfg.Agents.Defaults.MaxToolIterations
+	if maxToolSteps <= 0 {
+		maxToolSteps = 20
+	}
+
 	client := &Client{
 		provider:       fantasyProvider,
 		requestTimeout: requestTimeout,
 		modelID:        modelID,
+		tools:          tools,
+		maxToolSteps:   maxToolSteps,
 		sessions:       make(map[string][]core.Message),
 		generate:       generateWithFantasyAgent,
 	}
@@ -182,9 +206,18 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		generate = generateWithFantasyAgent
 	}
 
-	result, err := generate(ctx, languageModel, call)
+	agentOptions := c.buildAgentOptions()
+	result, err := generate(ctx, languageModel, call, agentOptions)
 	if err != nil {
 		return providertypes.PromptResult{}, fmt.Errorf("prompt failed: %w", err)
+	}
+
+	if c.shouldFinalizeAfterLimit(result) {
+		finalized, finalizeErr := c.generateFinalSummaryStep(ctx, languageModel, history, prompt, result, agentOptions)
+		if finalizeErr != nil {
+			return providertypes.PromptResult{}, fmt.Errorf("finalize limited tool run: %w", finalizeErr)
+		}
+		result = finalized
 	}
 
 	response := extractText(result.Response.Content)
@@ -192,15 +225,28 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		return providertypes.PromptResult{}, errors.New("prompt succeeded but returned no text")
 	}
 
-	c.appendSessionMessages(sessionID,
-		core.NewUserMessage(prompt),
-		core.Message{
+	messagesToAppend := []core.Message{core.NewUserMessage(prompt)}
+	if len(c.tools) > 0 {
+		stepHistory := stepMessages(result.Steps)
+		if len(stepHistory) > 0 {
+			messagesToAppend = append(messagesToAppend, stepHistory...)
+		} else {
+			messagesToAppend = append(messagesToAppend, core.Message{
+				Role: core.MessageRoleAssistant,
+				Content: []core.MessagePart{
+					core.TextPart{Text: response},
+				},
+			})
+		}
+	} else {
+		messagesToAppend = append(messagesToAppend, core.Message{
 			Role: core.MessageRoleAssistant,
 			Content: []core.MessagePart{
 				core.TextPart{Text: response},
 			},
-		},
-	)
+		})
+	}
+	c.appendSessionMessages(sessionID, messagesToAppend...)
 
 	usage := providertypes.TokenUsage{
 		InputTokens:         result.TotalUsage.InputTokens,
@@ -224,6 +270,108 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		Text:     response,
 		Metadata: metadata,
 	}, nil
+}
+
+func (c *Client) buildAgentOptions() []core.AgentOption {
+	if len(c.tools) == 0 {
+		return nil
+	}
+
+	return []core.AgentOption{
+		core.WithTools(c.tools...),
+		core.WithStopConditions(core.StepCountIs(c.maxToolSteps)),
+	}
+}
+
+func (c *Client) shouldFinalizeAfterLimit(result *core.AgentResult) bool {
+	if len(c.tools) == 0 || result == nil || c.maxToolSteps <= 0 {
+		return false
+	}
+	if len(result.Steps) < c.maxToolSteps {
+		return false
+	}
+
+	lastStep := result.Steps[len(result.Steps)-1]
+	return lastStep.FinishReason == core.FinishReasonToolCalls
+}
+
+func (c *Client) generateFinalSummaryStep(ctx context.Context, model core.LanguageModel, history []core.Message, userPrompt string, prior *core.AgentResult, agentOptions []core.AgentOption) (*core.AgentResult, error) {
+	summaryMessages := make([]core.Message, 0, len(history)+len(prior.Steps)*2+1)
+	summaryMessages = append(summaryMessages, history...)
+	summaryMessages = append(summaryMessages, core.NewUserMessage(userPrompt))
+	summaryMessages = append(summaryMessages, stepMessages(prior.Steps)...)
+
+	prepareNoTools := func(ctx context.Context, _ core.PrepareStepFunctionOptions) (context.Context, core.PrepareStepResult, error) {
+		return ctx, core.PrepareStepResult{DisableAllTools: true}, nil
+	}
+
+	finalOptions := append([]core.AgentOption{}, agentOptions...)
+	finalOptions = append(finalOptions,
+		core.WithStopConditions(core.StepCountIs(1)),
+		core.WithPrepareStep(prepareNoTools),
+	)
+
+	finalCall := core.AgentCall{
+		Prompt:   "Provide a concise final answer to the user based on the completed tool results.",
+		Messages: summaryMessages,
+	}
+	if c.maxOutputTokens != nil {
+		finalCall.MaxOutputTokens = c.maxOutputTokens
+	}
+	if c.temperature != nil {
+		finalCall.Temperature = c.temperature
+	}
+
+	generate := c.generate
+	if generate == nil {
+		generate = generateWithFantasyAgent
+	}
+
+	finalResult, err := generate(ctx, model, finalCall, finalOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	mergedSteps := make([]core.StepResult, 0, len(prior.Steps)+len(finalResult.Steps))
+	mergedSteps = append(mergedSteps, prior.Steps...)
+	mergedSteps = append(mergedSteps, finalResult.Steps...)
+
+	totalUsage := addUsage(prior.TotalUsage, finalResult.TotalUsage)
+
+	merged := &core.AgentResult{
+		Steps:      mergedSteps,
+		Response:   finalResult.Response,
+		TotalUsage: totalUsage,
+	}
+
+	slog.Default().With("component", "provider.fantasy").Debug("Tool iteration limit reached; generated final summary step",
+		"max_tool_iterations", c.maxToolSteps,
+	)
+
+	return merged, nil
+}
+
+func addUsage(a core.Usage, b core.Usage) core.Usage {
+	return core.Usage{
+		InputTokens:         a.InputTokens + b.InputTokens,
+		OutputTokens:        a.OutputTokens + b.OutputTokens,
+		TotalTokens:         a.TotalTokens + b.TotalTokens,
+		ReasoningTokens:     a.ReasoningTokens + b.ReasoningTokens,
+		CacheCreationTokens: a.CacheCreationTokens + b.CacheCreationTokens,
+		CacheReadTokens:     a.CacheReadTokens + b.CacheReadTokens,
+	}
+}
+
+func stepMessages(steps []core.StepResult) []core.Message {
+	messages := make([]core.Message, 0, len(steps)*2)
+	for _, step := range steps {
+		if len(step.Messages) == 0 {
+			continue
+		}
+		messages = append(messages, step.Messages...)
+	}
+
+	return messages
 }
 
 // withTimeout wraps context with provider-level request timeout when configured.
@@ -318,7 +466,7 @@ func extractText(content core.ResponseContent) string {
 }
 
 // generateWithFantasyAgent delegates prompt generation to fantasy runtime.
-func generateWithFantasyAgent(ctx context.Context, model core.LanguageModel, call core.AgentCall) (*core.AgentResult, error) {
-	runtime := core.NewAgent(model)
+func generateWithFantasyAgent(ctx context.Context, model core.LanguageModel, call core.AgentCall, options []core.AgentOption) (*core.AgentResult, error) {
+	runtime := core.NewAgent(model, options...)
 	return runtime.Generate(ctx, call)
 }

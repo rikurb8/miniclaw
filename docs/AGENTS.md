@@ -27,6 +27,20 @@ These runtime types apply to both `agent` (CLI) and `gateway` (channel) commands
 - Fantasy-powered runtime mode using `charm.land/fantasy`.
 - Current provider support: `openai` only.
 - Maintains in-process conversation history per session and executes prompts through Fantasy's agent API.
+- Enables workspace-bounded filesystem tools: `read_file`, `write_file`, `append_file`, `list_dir`, `edit_file`.
+- Resolves workspace from `agents.defaults.workspace` (creates it when missing) and blocks traversal/symlink escape attempts.
+- Enforces tool-step limits using `agents.defaults.max_tool_iterations` (default `20` when unset).
+- On tool-step limit hit, runs one final no-tools step so the user still gets a final summary response.
+- When tools are enabled, persists full fantasy step messages (tool calls/results included) into session history for multi-turn coherence.
+
+### Fantasy tool limits (phase 1)
+
+- `read_file`: max `256 KiB`
+- `write_file` / `append_file` / `edit_file`: max `1 MiB` payload
+- `list_dir`: max `500` entries (deterministic truncation)
+- per-tool timeout: `10s`
+
+Safety note: this is not a host-level sandbox; host OS permissions still apply.
 
 ## Config Example
 

@@ -2,8 +2,10 @@ package fantasy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	core "charm.land/fantasy"
@@ -72,6 +74,27 @@ func TestNewRequiresAPIKey(t *testing.T) {
 	_, err := New(cfg)
 	if err == nil {
 		t.Fatal("expected missing api key error")
+	}
+}
+
+func TestNewInitializesToolsAndDefaultIterationLimit(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	cfg := &config.Config{}
+	cfg.Agents.Defaults.Provider = "openai"
+	cfg.Agents.Defaults.Model = "openai/gpt-5.2"
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.MaxToolIterations = 0
+
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+	if len(client.tools) != 5 {
+		t.Fatalf("tools length = %d, want 5", len(client.tools))
+	}
+	if client.maxToolSteps != 20 {
+		t.Fatalf("maxToolSteps = %d, want 20", client.maxToolSteps)
 	}
 }
 
@@ -159,7 +182,7 @@ func TestPromptMaintainsSessionHistory(t *testing.T) {
 		provider: provider,
 		modelID:  "gpt-5.2",
 		sessions: map[string][]core.Message{},
-		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall) (*core.AgentResult, error) {
+		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall, _ []core.AgentOption) (*core.AgentResult, error) {
 			generationCalls++
 			return &core.AgentResult{
 				Response: core.Response{
@@ -228,7 +251,7 @@ func TestPromptInjectsSystemMessageOnFirstTurn(t *testing.T) {
 		provider: provider,
 		modelID:  "gpt-5.2",
 		sessions: map[string][]core.Message{},
-		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall) (*core.AgentResult, error) {
+		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall, _ []core.AgentOption) (*core.AgentResult, error) {
 			if firstCallMessages == nil {
 				firstCallMessages = call.Messages
 			}
@@ -255,5 +278,160 @@ func TestPromptInjectsSystemMessageOnFirstTurn(t *testing.T) {
 	}
 	if firstCallMessages[0].Role != core.MessageRoleSystem {
 		t.Fatalf("first message role = %q, want %q", firstCallMessages[0].Role, core.MessageRoleSystem)
+	}
+}
+
+func TestPromptPersistsStepMessagesWhenToolsEnabled(t *testing.T) {
+	provider := &fakeLanguageModelProvider{model: &fakeLanguageModel{}}
+	tool := core.NewAgentTool("noop", "noop tool", func(ctx context.Context, input struct{}, call core.ToolCall) (core.ToolResponse, error) {
+		return core.NewTextResponse("ok"), nil
+	})
+
+	client := &Client{
+		provider: provider,
+		modelID:  "gpt-5.2",
+		tools:    []core.AgentTool{tool},
+		sessions: map[string][]core.Message{},
+		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall, _ []core.AgentOption) (*core.AgentResult, error) {
+			return &core.AgentResult{
+				Steps: []core.StepResult{
+					{
+						Messages: []core.Message{
+							{Role: core.MessageRoleAssistant, Content: []core.MessagePart{core.TextPart{Text: "tool planning"}}},
+							{Role: core.MessageRoleTool, Content: []core.MessagePart{core.ToolResultPart{ToolCallID: "1", Output: core.ToolResultOutputContentText{Text: "ok"}}}},
+						},
+						Response: core.Response{Content: core.ResponseContent{core.TextContent{Text: "final answer"}}},
+					},
+				},
+				Response: core.Response{Content: core.ResponseContent{core.TextContent{Text: "final answer"}}},
+			}, nil
+		},
+	}
+
+	sessionID, err := client.CreateSession(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CreateSession error: %v", err)
+	}
+
+	_, err = client.Prompt(context.Background(), sessionID, "hello", "gpt-5.2", "", "")
+	if err != nil {
+		t.Fatalf("Prompt error: %v", err)
+	}
+
+	history, ok := client.sessionHistory(sessionID)
+	if !ok {
+		t.Fatal("expected session history")
+	}
+	if len(history) != 3 {
+		t.Fatalf("history length = %d, want 3", len(history))
+	}
+	if history[0].Role != core.MessageRoleUser {
+		t.Fatalf("history[0].Role = %q, want user", history[0].Role)
+	}
+	if history[1].Role != core.MessageRoleAssistant {
+		t.Fatalf("history[1].Role = %q, want assistant", history[1].Role)
+	}
+	if history[2].Role != core.MessageRoleTool {
+		t.Fatalf("history[2].Role = %q, want tool", history[2].Role)
+	}
+}
+
+func TestPromptGeneratesFinalSummaryWhenToolLimitReached(t *testing.T) {
+	provider := &fakeLanguageModelProvider{model: &fakeLanguageModel{}}
+	tool := core.NewAgentTool("noop", "noop tool", func(ctx context.Context, input struct{}, call core.ToolCall) (core.ToolResponse, error) {
+		return core.NewTextResponse("ok"), nil
+	})
+
+	calls := 0
+	var secondCallPrompt string
+	client := &Client{
+		provider:     provider,
+		modelID:      "gpt-5.2",
+		tools:        []core.AgentTool{tool},
+		maxToolSteps: 1,
+		sessions:     map[string][]core.Message{},
+		generate: func(ctx context.Context, model core.LanguageModel, call core.AgentCall, options []core.AgentOption) (*core.AgentResult, error) {
+			calls++
+			_ = model
+			_ = options
+			if calls == 1 {
+				return &core.AgentResult{
+					Steps: []core.StepResult{{
+						Response: core.Response{
+							FinishReason: core.FinishReasonToolCalls,
+							Content:      core.ResponseContent{core.ToolCallContent{ToolCallID: "1", ToolName: "noop", Input: `{}`}},
+						},
+						Messages: []core.Message{{Role: core.MessageRoleAssistant, Content: []core.MessagePart{core.ToolCallPart{ToolCallID: "1", ToolName: "noop", Input: `{}`}}}},
+					}},
+					Response: core.Response{
+						FinishReason: core.FinishReasonToolCalls,
+						Content:      core.ResponseContent{core.ToolCallContent{ToolCallID: "1", ToolName: "noop", Input: `{}`}},
+					},
+				}, nil
+			}
+
+			secondCallPrompt = call.Prompt
+			if len(call.Messages) == 0 {
+				t.Fatal("expected summary call to include prior messages")
+			}
+			_ = ctx
+			return &core.AgentResult{
+				Steps: []core.StepResult{{
+					Response: core.Response{Content: core.ResponseContent{core.TextContent{Text: "final summary"}}},
+					Messages: []core.Message{{Role: core.MessageRoleAssistant, Content: []core.MessagePart{core.TextPart{Text: "final summary"}}}},
+				}},
+				Response: core.Response{Content: core.ResponseContent{core.TextContent{Text: "final summary"}}},
+			}, nil
+		},
+	}
+
+	sessionID, err := client.CreateSession(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CreateSession error: %v", err)
+	}
+
+	result, err := client.Prompt(context.Background(), sessionID, "run tools", "gpt-5.2", "", "")
+	if err != nil {
+		t.Fatalf("Prompt error: %v", err)
+	}
+	if result.Text != "final summary" {
+		t.Fatalf("result text = %q, want final summary", result.Text)
+	}
+	if calls != 2 {
+		t.Fatalf("generate calls = %d, want 2", calls)
+	}
+	if secondCallPrompt == "" {
+		t.Fatal("expected final summary prompt to be set")
+	}
+}
+
+func TestBuildAgentOptionsIncludesToolsAndStepLimit(t *testing.T) {
+	tool := core.NewAgentTool("noop", "noop tool", func(ctx context.Context, input struct{}, call core.ToolCall) (core.ToolResponse, error) {
+		return core.NewTextResponse("ok"), nil
+	})
+
+	client := &Client{tools: []core.AgentTool{tool}, maxToolSteps: 3}
+	options := client.buildAgentOptions()
+	if len(options) != 2 {
+		t.Fatalf("options length = %d, want 2", len(options))
+	}
+
+	model := &fakeLanguageModel{}
+	agent := core.NewAgent(model, options...)
+	_, err := agent.Generate(context.Background(), core.AgentCall{Prompt: "hello"})
+	if err == nil {
+		t.Fatal("expected generation error from fake model")
+	}
+}
+
+func TestToolCallSerializationForHistoryMessages(t *testing.T) {
+	content := core.ToolCallContent{ToolCallID: "1", ToolName: "read_file", Input: `{"path":"a.txt"}`}
+
+	payload, err := json.Marshal(content)
+	if err != nil {
+		t.Fatalf("json.Marshal error: %v", err)
+	}
+	if len(payload) == 0 {
+		t.Fatal("expected serialized content")
 	}
 }

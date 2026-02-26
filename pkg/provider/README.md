@@ -58,6 +58,17 @@ This list intentionally covers non-test code for quick exploration.
 - `pkg/provider/fantasy/fantasy.go`
   - Implements an in-memory-session provider using `charm.land/fantasy` with OpenAI backend.
   - Maintains local message history per session and returns normalized prompt results.
+  - Wires workspace-bounded filesystem tools (`read_file`, `write_file`, `append_file`, `list_dir`, `edit_file`) for `fantasy-agent`.
+  - Applies tool-step loop bounds and a final no-tools summarization step when iteration limit is hit.
+
+### Related tool/workspace packages
+
+- `pkg/workspace`
+  - Resolves workspace root and enforces path containment with stable error categories.
+- `pkg/tools/fs`
+  - Provides bounded filesystem operations behind an internal service API.
+- `pkg/tools/fantasy`
+  - Adapts filesystem service methods to Fantasy `AgentTool` definitions.
 
 ## Mental Model For Explorers
 

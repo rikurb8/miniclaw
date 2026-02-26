@@ -115,6 +115,38 @@ MiniClaw supports configurable agent runtimes through `agents.defaults.type`:
 - `opencode-agent`: reserved runtime mode for OpenCode-backed orchestration.
 - `fantasy-agent`: Fantasy-backed runtime flow (`charm.land/fantasy`), currently OpenAI provider only.
 
+### Fantasy filesystem tools (phase 1)
+
+When `agents.defaults.type` is `fantasy-agent`, MiniClaw enables a small filesystem toolset for the model:
+
+- `read_file`
+- `write_file`
+- `append_file`
+- `list_dir`
+- `edit_file`
+
+All tool operations are restricted to `agents.defaults.workspace`.
+MiniClaw resolves that path, creates it if needed, and blocks path traversal/symlink escapes.
+
+Tooling safety defaults:
+
+- max tool iterations: `agents.defaults.max_tool_iterations` (default `20` when unset)
+- max read payload: `256 KiB`
+- max write/append/edit payload: `1 MiB`
+- max directory entries per `list_dir`: `500`
+- per-tool timeout: `10s`
+
+Safety note: this is a workspace boundary, not an OS sandbox.
+Choose a narrow workspace directory for production-like usage.
+
+Example prompt:
+
+```bash
+go run . agent --prompt "Create notes/today.md with a checklist, append one more item, then read it back and summarize what you changed."
+```
+
+When tool-step limits are reached, MiniClaw runs one final no-tools summarization step so users still get a readable final answer.
+
 ## OpenAI provider
 
 MiniClaw also supports OpenAI via `github.com/openai/openai-go/v3`.

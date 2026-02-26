@@ -24,6 +24,16 @@ Typical startup flow:
 3. JSON is unmarshaled into `Config`.
 4. Selected env values override file values (for example Telegram token settings).
 
+## Agent defaults fields worth knowing
+
+`agents.defaults` contains runtime controls used across agent types. For fantasy tooling behavior, these fields are important:
+
+- `workspace`: workspace root used for filesystem tools.
+- `restrict_to_workspace`: workspace safety policy flag.
+- `max_tool_iterations`: step-bound limit for tool loops.
+
+See `config/config.example.json` and `README.md` for practical guidance.
+
 ## Package Map (Non-test Files)
 
 This list intentionally covers non-test code for quick exploration.
