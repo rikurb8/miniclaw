@@ -38,7 +38,7 @@ docker compose run --rm miniclaw agent --prompt "hello from miniclaw"
 docker compose run --rm miniclaw agent
 ```
 
-Interactive chat tip: use `Ctrl+T` to toggle inline tool-call cards in conversation history.
+Interactive chat tips: use `Ctrl+T` to toggle inline tool-call cards and use the mouse wheel (or `PgUp`/`PgDn`) to scroll transcript history.
 
 That is enough to try MiniClaw end to end.
 

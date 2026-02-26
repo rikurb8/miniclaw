@@ -21,7 +21,7 @@ MiniClaw has a few major layers:
 Typical chat flow:
 
 1. Entry point provides a `PromptFunc` callback into UI.
-2. UI model captures keyboard input and issues async prompt commands.
+2. UI model captures keyboard input and mouse-wheel transcript scrolling, then issues async prompt commands.
 3. Prompt results/errors are converted into transcript entries.
 4. Styled views render history, status, and token/runtime metadata.
 5. Interactive mode supports `Ctrl+T` to show/hide tool cards in transcript history.

@@ -22,7 +22,7 @@ type RuntimeInfo struct {
 // RunInteractive starts the full-screen interactive chat UI.
 func RunInteractive(ctx context.Context, promptFn PromptFunc, info RuntimeInfo) error {
 	model := newModel(ctx, promptFn, modeInteractive, "", info)
-	program := tea.NewProgram(model)
+	program := tea.NewProgram(model, tea.WithMouseCellMotion())
 	_, err := program.Run()
 	if err != nil {
 		return err

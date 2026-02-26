@@ -129,6 +129,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport(false)
 		m.isReady = true
 		return m, nil
+	case tea.MouseMsg:
+		if m.booting {
+			return m, nil
+		}
+
+		if m.mode == modeInteractive {
+			if handled := m.handleViewportMouse(typed); handled {
+				return m, nil
+			}
+		}
 	case bootTickMsg:
 		if !m.booting {
 			return m, nil
@@ -481,6 +491,32 @@ func (m *model) handleViewportKey(msg tea.KeyMsg) bool {
 	case "end":
 		m.viewport.GotoBottom()
 		m.followLog = true
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *model) handleViewportMouse(msg tea.MouseMsg) bool {
+	if msg.Action != tea.MouseActionPress {
+		return false
+	}
+
+	scrollStep := m.viewport.MouseWheelDelta
+	if scrollStep <= 0 {
+		scrollStep = 3
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		m.viewport.ScrollUp(scrollStep)
+		m.followLog = false
+		return true
+	case tea.MouseButtonWheelDown:
+		m.viewport.ScrollDown(scrollStep)
+		if m.viewport.AtBottom() {
+			m.followLog = true
+		}
 		return true
 	default:
 		return false
