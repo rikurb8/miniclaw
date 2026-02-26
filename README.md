@@ -38,6 +38,8 @@ docker compose run --rm miniclaw agent --prompt "hello from miniclaw"
 docker compose run --rm miniclaw agent
 ```
 
+Interactive chat tip: use `Ctrl+T` to toggle inline tool-call cards in conversation history.
+
 That is enough to try MiniClaw end to end.
 
 ## Gateway Mode (Channels)

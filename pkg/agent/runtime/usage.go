@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,7 @@ const (
 	UsageReasoningTokensKey   = "usage_reasoning_tokens"
 	UsageCacheCreateTokensKey = "usage_cache_creation_tokens"
 	UsageCacheReadTokensKey   = "usage_cache_read_tokens"
+	ToolEventsJSONKey         = "tool_events_json"
 )
 
 // PromptResultMetadata serializes provider usage fields into outbound metadata.
@@ -22,19 +24,33 @@ const (
 // Keeping this logic in one place avoids subtle drift between CLI and gateway
 // response formatting.
 func PromptResultMetadata(result providertypes.PromptResult) map[string]string {
-	if result.Metadata.Usage == nil {
+	if result.Metadata.Usage == nil && len(result.Metadata.ToolEvents) == 0 {
 		return nil
 	}
 
-	usage := result.Metadata.Usage
-	return map[string]string{
-		UsageInputTokensKey:       strconv.FormatInt(usage.InputTokens, 10),
-		UsageOutputTokensKey:      strconv.FormatInt(usage.OutputTokens, 10),
-		UsageTotalTokensKey:       strconv.FormatInt(usage.TotalTokens, 10),
-		UsageReasoningTokensKey:   strconv.FormatInt(usage.ReasoningTokens, 10),
-		UsageCacheCreateTokensKey: strconv.FormatInt(usage.CacheCreationTokens, 10),
-		UsageCacheReadTokensKey:   strconv.FormatInt(usage.CacheReadTokens, 10),
+	metadata := map[string]string{}
+	if result.Metadata.Usage != nil {
+		usage := result.Metadata.Usage
+		metadata[UsageInputTokensKey] = strconv.FormatInt(usage.InputTokens, 10)
+		metadata[UsageOutputTokensKey] = strconv.FormatInt(usage.OutputTokens, 10)
+		metadata[UsageTotalTokensKey] = strconv.FormatInt(usage.TotalTokens, 10)
+		metadata[UsageReasoningTokensKey] = strconv.FormatInt(usage.ReasoningTokens, 10)
+		metadata[UsageCacheCreateTokensKey] = strconv.FormatInt(usage.CacheCreationTokens, 10)
+		metadata[UsageCacheReadTokensKey] = strconv.FormatInt(usage.CacheReadTokens, 10)
 	}
+
+	if len(result.Metadata.ToolEvents) > 0 {
+		payload, err := json.Marshal(result.Metadata.ToolEvents)
+		if err == nil {
+			metadata[ToolEventsJSONKey] = string(payload)
+		}
+	}
+
+	if len(metadata) == 0 {
+		return nil
+	}
+
+	return metadata
 }
 
 // PromptResultFromOutbound reconstructs provider usage from bus metadata.
@@ -54,11 +70,33 @@ func PromptResultFromOutbound(outbound bus.OutboundMessage) providertypes.Prompt
 	}
 
 	if usage.IsZero() {
-		return result
+		usage = nil
 	}
 
 	result.Metadata.Usage = usage
+	if raw, ok := outbound.Metadata[ToolEventsJSONKey]; ok {
+		result.Metadata.ToolEvents = parseToolEvents(raw)
+	}
+
 	return result
+}
+
+func parseToolEvents(raw string) []providertypes.ToolEvent {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	var events []providertypes.ToolEvent
+	if err := json.Unmarshal([]byte(trimmed), &events); err != nil {
+		return nil
+	}
+
+	if len(events) == 0 {
+		return nil
+	}
+
+	return events
 }
 
 func parseInt64(value string) int64 {

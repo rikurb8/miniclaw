@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	"miniclaw/pkg/agent"
@@ -42,6 +43,9 @@ type LocalSession struct {
 	cancelWorker context.CancelFunc
 
 	requestCounter atomic.Uint64
+
+	handlersMu        sync.Mutex
+	toolEventHandlers map[string]providertypes.ToolEventHandler
 }
 
 func StartLocalSession(ctx context.Context, cfg *config.Config, log *slog.Logger, client provider.Client, observeEvents bool) (*LocalSession, error) {
@@ -69,17 +73,18 @@ func StartLocalSession(ctx context.Context, cfg *config.Config, log *slog.Logger
 	}
 
 	session := &LocalSession{
-		runtime:      runtime,
-		messageBus:   bus.NewMessageBus(),
-		log:          log,
-		cancelLoop:   func() {},
-		loopErrCh:    make(chan error, 1),
-		cancelWorker: func() {},
+		runtime:           runtime,
+		messageBus:        bus.NewMessageBus(),
+		log:               log,
+		cancelLoop:        func() {},
+		loopErrCh:         make(chan error, 1),
+		cancelWorker:      func() {},
+		toolEventHandlers: make(map[string]providertypes.ToolEventHandler),
 	}
 
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	session.cancelWorker = cancelWorker
-	go runAgentBusWorker(workerCtx, runtime, session.messageBus)
+	go runAgentBusWorker(workerCtx, runtime, session.messageBus, session.toolEventHandler, session.clearToolEventHandler)
 
 	if runtime.HeartbeatEnabled() {
 		loopCtx, cancelLoop := context.WithCancel(ctx)
@@ -101,7 +106,7 @@ func (s *LocalSession) Prompt(ctx context.Context, prompt string) (providertypes
 		return providertypes.PromptResult{}, errors.New("local session is nil")
 	}
 
-	return executePromptViaBus(ctx, &s.requestCounter, s.messageBus, prompt)
+	return s.executePromptViaBus(ctx, prompt)
 }
 
 // Close shuts down worker and heartbeat resources owned by the session.
@@ -134,7 +139,7 @@ func executePrompt(ctx context.Context, runtime *agent.Instance, prompt string) 
 	return runtime.Prompt(ctx, prompt)
 }
 
-func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus *bus.MessageBus) {
+func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus *bus.MessageBus, toolEventHandler func(requestID string) (providertypes.ToolEventHandler, bool), clearToolEventHandler func(requestID string)) {
 	var sessionUsageIn int64
 	var sessionUsageOut int64
 	var sessionUsageTotal int64
@@ -157,7 +162,15 @@ func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus 
 			},
 		})
 
-		result, err := executePrompt(ctx, runtime, inbound.Content)
+		callCtx := ctx
+		if handler, ok := toolEventHandler(requestID); ok {
+			callCtx = providertypes.WithToolEventHandler(ctx, handler)
+		}
+
+		result, err := executePrompt(callCtx, runtime, inbound.Content)
+		if requestID != "" {
+			clearToolEventHandler(requestID)
+		}
 		outbound := bus.OutboundMessage{
 			Channel:    inbound.Channel,
 			ChatID:     inbound.ChatID,
@@ -208,8 +221,13 @@ func runAgentBusWorker(ctx context.Context, runtime *agent.Instance, messageBus 
 	}
 }
 
-func executePromptViaBus(ctx context.Context, counter *atomic.Uint64, messageBus *bus.MessageBus, prompt string) (providertypes.PromptResult, error) {
-	requestID := strconv.FormatUint(counter.Add(1), 10)
+func (s *LocalSession) executePromptViaBus(ctx context.Context, prompt string) (providertypes.PromptResult, error) {
+	requestID := strconv.FormatUint(s.requestCounter.Add(1), 10)
+	if handler, ok := providertypes.ToolEventHandlerFromContext(ctx); ok {
+		s.setToolEventHandler(requestID, handler)
+		defer s.clearToolEventHandler(requestID)
+	}
+
 	inbound := bus.InboundMessage{
 		Channel:    cliChannelName,
 		ChatID:     cliChatID,
@@ -220,14 +238,14 @@ func executePromptViaBus(ctx context.Context, counter *atomic.Uint64, messageBus
 		},
 	}
 
-	if ok := messageBus.PublishInbound(ctx, inbound); !ok {
+	if ok := s.messageBus.PublishInbound(ctx, inbound); !ok {
 		if err := ctx.Err(); err != nil {
 			return providertypes.PromptResult{}, err
 		}
 		return providertypes.PromptResult{}, errors.New("unable to enqueue prompt")
 	}
 
-	outbound, ok := messageBus.SubscribeOutbound(ctx)
+	outbound, ok := s.messageBus.SubscribeOutbound(ctx)
 	if !ok {
 		if err := ctx.Err(); err != nil {
 			return providertypes.PromptResult{}, err
@@ -240,4 +258,56 @@ func executePromptViaBus(ctx context.Context, counter *atomic.Uint64, messageBus
 	}
 
 	return PromptResultFromOutbound(outbound), nil
+}
+
+func (s *LocalSession) setToolEventHandler(requestID string, handler providertypes.ToolEventHandler) {
+	if s == nil {
+		return
+	}
+	requestID = strconv.FormatInt(parseRequestID(requestID), 10)
+	if requestID == "0" || handler == nil {
+		return
+	}
+
+	s.handlersMu.Lock()
+	defer s.handlersMu.Unlock()
+	s.toolEventHandlers[requestID] = handler
+}
+
+func (s *LocalSession) toolEventHandler(requestID string) (providertypes.ToolEventHandler, bool) {
+	if s == nil {
+		return nil, false
+	}
+	requestID = strconv.FormatInt(parseRequestID(requestID), 10)
+	if requestID == "0" {
+		return nil, false
+	}
+
+	s.handlersMu.Lock()
+	defer s.handlersMu.Unlock()
+	handler, ok := s.toolEventHandlers[requestID]
+	return handler, ok
+}
+
+func (s *LocalSession) clearToolEventHandler(requestID string) {
+	if s == nil {
+		return
+	}
+	requestID = strconv.FormatInt(parseRequestID(requestID), 10)
+	if requestID == "0" {
+		return
+	}
+
+	s.handlersMu.Lock()
+	defer s.handlersMu.Unlock()
+	delete(s.toolEventHandlers, requestID)
+}
+
+func parseRequestID(value string) int64 {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+
+	return parsed
 }

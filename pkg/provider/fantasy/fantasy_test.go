@@ -313,9 +313,15 @@ func TestPromptPersistsStepMessagesWhenToolsEnabled(t *testing.T) {
 		t.Fatalf("CreateSession error: %v", err)
 	}
 
-	_, err = client.Prompt(context.Background(), sessionID, "hello", "gpt-5.2", "", "")
+	result, err := client.Prompt(context.Background(), sessionID, "hello", "gpt-5.2", "", "")
 	if err != nil {
 		t.Fatalf("Prompt error: %v", err)
+	}
+	if len(result.Metadata.ToolEvents) != 1 {
+		t.Fatalf("tool event length = %d, want 1", len(result.Metadata.ToolEvents))
+	}
+	if result.Metadata.ToolEvents[0].Kind != "result" {
+		t.Fatalf("first tool event kind = %q, want %q", result.Metadata.ToolEvents[0].Kind, "result")
 	}
 
 	history, ok := client.sessionHistory(sessionID)
@@ -433,5 +439,25 @@ func TestToolCallSerializationForHistoryMessages(t *testing.T) {
 	}
 	if len(payload) == 0 {
 		t.Fatal("expected serialized content")
+	}
+}
+
+func TestExtractToolEventsFromSteps(t *testing.T) {
+	steps := []core.StepResult{{
+		Messages: []core.Message{
+			{Role: core.MessageRoleAssistant, Content: []core.MessagePart{core.ToolCallPart{ToolCallID: "1", ToolName: "read_file", Input: `{"path":"a.txt"}`}}},
+			{Role: core.MessageRoleTool, Content: []core.MessagePart{core.ToolResultPart{ToolCallID: "1", Output: core.ToolResultOutputContentText{Text: "ok"}}}},
+		},
+	}}
+
+	events := extractToolEvents(steps)
+	if len(events) != 2 {
+		t.Fatalf("event length = %d, want 2", len(events))
+	}
+	if got := events[0].Tool; got != "read_file" {
+		t.Fatalf("call tool = %q, want %q", got, "read_file")
+	}
+	if got := events[1].Tool; got != "read_file" {
+		t.Fatalf("result tool = %q, want %q", got, "read_file")
 	}
 }

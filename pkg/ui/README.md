@@ -8,6 +8,7 @@ At a high level, this package is responsible for:
 - Translating prompt function callbacks into async UI events.
 - Rendering transcript/status/runtime metadata in a consistent style.
 - Encapsulating Bubble Tea state management away from command-layer code.
+- Showing tool calls/results inline in chat flow with a dedicated visual card.
 
 ## How It Fits In The System
 
@@ -23,6 +24,7 @@ Typical chat flow:
 2. UI model captures keyboard input and issues async prompt commands.
 3. Prompt results/errors are converted into transcript entries.
 4. Styled views render history, status, and token/runtime metadata.
+5. Interactive mode supports `Ctrl+T` to show/hide tool cards in transcript history.
 
 ## Package Map (Non-test Files And Subpackages)
 
@@ -36,7 +38,7 @@ This list intentionally covers non-test code for quick exploration.
 
 - `pkg/ui/chat/model.go`
   - Implements Bubble Tea state model, update loop, transcript handling, and viewport behavior.
-  - Handles boot animation, keybindings, prompt dispatch, and usage counters.
+  - Handles boot animation, keybindings, prompt dispatch, tool-event transcript cards, and usage counters.
 
 - `pkg/ui/chat/styles.go`
   - Defines the shared style palette used by chat rendering.

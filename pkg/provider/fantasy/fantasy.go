@@ -262,6 +262,9 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, mo
 		Model:    modelID,
 		Agent:    strings.TrimSpace(agent),
 	}
+	if !providertypes.HasToolEventHandler(ctx) {
+		metadata.ToolEvents = extractToolEvents(result.Steps)
+	}
 	if !usage.IsZero() {
 		metadata.Usage = &usage
 	}
@@ -463,6 +466,50 @@ func extractText(content core.ResponseContent) string {
 	}
 
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func extractToolEvents(steps []core.StepResult) []providertypes.ToolEvent {
+	events := make([]providertypes.ToolEvent, 0)
+	toolByCallID := make(map[string]string)
+	for _, step := range steps {
+		for _, message := range step.Messages {
+			for _, part := range message.Content {
+				switch typed := part.(type) {
+				case core.ToolCallPart:
+					toolName := strings.TrimSpace(typed.ToolName)
+					if callID := strings.TrimSpace(typed.ToolCallID); callID != "" && toolName != "" {
+						toolByCallID[callID] = toolName
+					}
+					events = append(events, providertypes.ToolEvent{
+						Kind:    "call",
+						Tool:    toolName,
+						Payload: strings.TrimSpace(typed.Input),
+					})
+				case core.ToolResultPart:
+					toolName := ""
+					if callID := strings.TrimSpace(typed.ToolCallID); callID != "" {
+						toolName = toolByCallID[callID]
+					}
+					events = append(events, providertypes.ToolEvent{
+						Kind:    "result",
+						Tool:    toolName,
+						Payload: strings.TrimSpace(formatToolResultOutput(typed.Output)),
+					})
+				}
+			}
+		}
+	}
+
+	return events
+}
+
+func formatToolResultOutput(output any) string {
+	switch typed := output.(type) {
+	case core.ToolResultOutputContentText:
+		return typed.Text
+	default:
+		return fmt.Sprintf("%v", typed)
+	}
 }
 
 // generateWithFantasyAgent delegates prompt generation to fantasy runtime.

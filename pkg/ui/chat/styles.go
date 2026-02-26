@@ -13,6 +13,8 @@ type theme struct {
 	userTitle      lipgloss.Style
 	assistantBox   lipgloss.Style
 	assistantTitle lipgloss.Style
+	toolBox        lipgloss.Style
+	toolTitle      lipgloss.Style
 	errorBox       lipgloss.Style
 	errorTitle     lipgloss.Style
 	status         lipgloss.Style
@@ -60,6 +62,17 @@ func defaultTheme() theme {
 			Bold(true).
 			Foreground(lipgloss.Color("16")).
 			Background(lipgloss.Color("44")).
+			Padding(0, 1),
+		toolBox: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("109")).
+			Background(lipgloss.Color("236")).
+			Foreground(lipgloss.Color("252")).
+			Padding(0, 1),
+		toolTitle: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("16")).
+			Background(lipgloss.Color("109")).
 			Padding(0, 1),
 		errorBox: lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).

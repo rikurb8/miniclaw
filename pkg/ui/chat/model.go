@@ -33,6 +33,13 @@ type promptResultMsg struct {
 	err    error
 }
 
+type toolEventMsg struct {
+	event  providertypes.ToolEvent
+	stream <-chan providertypes.ToolEvent
+}
+
+type toolEventStreamClosedMsg struct{}
+
 type bootTickMsg struct{}
 
 // model is the Bubble Tea state container for chat UI rendering and interaction.
@@ -42,23 +49,26 @@ type model struct {
 	mode         mode
 	oneShotInput string
 
-	theme      theme
-	spinner    spinner.Model
-	input      textinput.Model
-	viewport   viewport.Model
-	messages   []chatMessage
-	width      int
-	height     int
-	isReady    bool
-	isLoading  bool
-	lastErr    string
-	booting    bool
-	bootStep   int
-	followLog  bool
-	runtime    RuntimeInfo
-	usageIn    int64
-	usageOut   int64
-	usageTotal int64
+	theme                   theme
+	spinner                 spinner.Model
+	input                   textinput.Model
+	viewport                viewport.Model
+	messages                []chatMessage
+	width                   int
+	height                  int
+	isReady                 bool
+	isLoading               bool
+	lastErr                 string
+	booting                 bool
+	bootStep                int
+	followLog               bool
+	showTools               bool
+	pendingToolMessageIndex int
+	receivedLiveToolEvents  bool
+	runtime                 RuntimeInfo
+	usageIn                 int64
+	usageOut                int64
+	usageTotal              int64
 }
 
 // newModel initializes chat UI state for interactive or one-shot mode.
@@ -76,19 +86,21 @@ func newModel(ctx context.Context, promptFn PromptFunc, runMode mode, prompt str
 	vp := viewport.New(80, 12)
 
 	return &model{
-		ctx:          ctx,
-		promptFn:     promptFn,
-		mode:         runMode,
-		oneShotInput: strings.TrimSpace(prompt),
-		theme:        defaultTheme(),
-		spinner:      spin,
-		input:        in,
-		viewport:     vp,
-		width:        100,
-		height:       28,
-		booting:      runMode == modeInteractive,
-		followLog:    true,
-		runtime:      info,
+		ctx:                     ctx,
+		promptFn:                promptFn,
+		mode:                    runMode,
+		oneShotInput:            strings.TrimSpace(prompt),
+		theme:                   defaultTheme(),
+		spinner:                 spin,
+		input:                   in,
+		viewport:                vp,
+		width:                   100,
+		height:                  28,
+		booting:                 runMode == modeInteractive,
+		followLog:               true,
+		showTools:               true,
+		pendingToolMessageIndex: -1,
+		runtime:                 info,
 	}
 }
 
@@ -97,7 +109,10 @@ func (m *model) Init() tea.Cmd {
 		m.messages = append(m.messages, chatMessage{role: "user", content: m.oneShotInput})
 		m.isLoading = true
 		m.refreshViewport(false)
-		return tea.Batch(m.spinner.Tick, sendPromptCmd(m.ctx, m.promptFn, m.oneShotInput))
+		toolStream := make(chan providertypes.ToolEvent, 16)
+		m.pendingToolMessageIndex = -1
+		m.receivedLiveToolEvents = false
+		return tea.Batch(m.spinner.Tick, sendPromptCmd(m.ctx, m.promptFn, m.oneShotInput, toolStream), waitToolEventCmd(toolStream))
 	}
 
 	return bootTickCmd()
@@ -129,7 +144,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage{role: "user", content: m.oneShotInput})
 			m.isLoading = true
 			m.refreshViewport(false)
-			return m, tea.Batch(m.spinner.Tick, sendPromptCmd(m.ctx, m.promptFn, m.oneShotInput))
+			toolStream := make(chan providertypes.ToolEvent, 16)
+			m.pendingToolMessageIndex = -1
+			m.receivedLiveToolEvents = false
+			return m, tea.Batch(m.spinner.Tick, sendPromptCmd(m.ctx, m.promptFn, m.oneShotInput, toolStream), waitToolEventCmd(toolStream))
 		}
 
 		if m.mode == modeInteractive {
@@ -141,6 +159,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch typed.String() {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
+		case "ctrl+t":
+			if m.mode == modeInteractive && !m.booting {
+				m.showTools = !m.showTools
+				m.refreshViewport(false)
+				return m, nil
+			}
 		}
 
 		if m.booting {
@@ -175,8 +199,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.SetValue("")
 			m.isLoading = true
 			m.followLog = true
+			m.pendingToolMessageIndex = -1
+			m.receivedLiveToolEvents = false
 			m.refreshViewport(true)
-			return m, tea.Batch(m.spinner.Tick, sendPromptCmd(m.ctx, m.promptFn, prompt))
+			toolStream := make(chan providertypes.ToolEvent, 16)
+			return m, tea.Batch(m.spinner.Tick, sendPromptCmd(m.ctx, m.promptFn, prompt, toolStream), waitToolEventCmd(toolStream))
 		}
 	}
 
@@ -198,6 +225,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage{role: "error", content: typed.err.Error()})
 		} else {
 			m.lastErr = ""
+			if !m.receivedLiveToolEvents && len(typed.result.Metadata.ToolEvents) > 0 {
+				for _, block := range mergeToolEvents(typed.result.Metadata.ToolEvents) {
+					m.messages = append(m.messages, chatMessage{role: "tool", content: block})
+				}
+			}
+			m.pendingToolMessageIndex = -1
 			m.messages = append(m.messages, chatMessage{role: "assistant", content: typed.result.Text, usage: typed.result.Metadata.Usage})
 			if typed.result.Metadata.Usage != nil {
 				m.usageIn += typed.result.Metadata.Usage.InputTokens
@@ -209,6 +242,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeOneShot {
 			return m, tea.Quit
 		}
+	case toolEventMsg:
+		m.receivedLiveToolEvents = true
+		m.appendOrMergeToolEvent(typed.event)
+		m.refreshViewport(false)
+		return m, waitToolEventCmd(typed.stream)
+	case toolEventStreamClosedMsg:
+		return m, nil
 	}
 
 	return m, cmd
@@ -239,7 +279,11 @@ func (m *model) View() string {
 	))
 	line := m.theme.divider.Width(m.width - 2).Render(strings.Repeat("═", max(8, m.width-2)))
 
-	status := m.theme.status.Render("💡 Enter send  ·  PgUp/PgDn scroll  ·  End jump latest  ·  🛑 Ctrl+C/Esc quit")
+	toolToggleLabel := "showing"
+	if !m.showTools {
+		toolToggleLabel = "hidden"
+	}
+	status := m.theme.status.Render(fmt.Sprintf("💡 Enter send  ·  PgUp/PgDn scroll  ·  End jump latest  ·  Ctrl+T tools:%s  ·  🛑 Ctrl+C/Esc quit", toolToggleLabel))
 	if m.isLoading {
 		status = m.theme.statusBusy.Render(fmt.Sprintf("%s ⚡ generating response...", m.spinner.View()))
 	}
@@ -282,6 +326,10 @@ func (m *model) refreshViewport(forceBottom bool) {
 	previousOffset := m.viewport.YOffset
 	var sections []string
 	for _, item := range m.messages {
+		if item.role == "tool" && !m.showTools {
+			continue
+		}
+
 		switch item.role {
 		case "user":
 			sections = append(sections, m.renderCard(
@@ -301,6 +349,11 @@ func (m *model) refreshViewport(forceBottom bool) {
 			sections = append(sections, m.renderCard(
 				m.theme.errorTitle.Render("▛▚ [ERROR] ▞▜"),
 				m.theme.errorBox.Width(m.viewport.Width).Render(strings.TrimSpace(item.content)),
+			))
+		case "tool":
+			sections = append(sections, m.renderCard(
+				m.theme.toolTitle.Render("▛▚ [ 🔧 TOOL ] ▞▜"),
+				m.theme.toolBox.Width(m.viewport.Width).Render(strings.TrimSpace(item.content)),
 			))
 		}
 	}
@@ -444,9 +497,22 @@ func bootScriptLines() []string {
 }
 
 // sendPromptCmd wraps prompt execution as an async Bubble Tea command.
-func sendPromptCmd(ctx context.Context, promptFn PromptFunc, prompt string) tea.Cmd {
+func sendPromptCmd(ctx context.Context, promptFn PromptFunc, prompt string, toolStream chan providertypes.ToolEvent) tea.Cmd {
 	return func() tea.Msg {
-		result, err := promptFn(ctx, prompt)
+		callCtx := ctx
+		if toolStream != nil {
+			callCtx = providertypes.WithToolEventHandler(ctx, func(event providertypes.ToolEvent) {
+				select {
+				case toolStream <- event:
+				default:
+				}
+			})
+		}
+
+		result, err := promptFn(callCtx, prompt)
+		if toolStream != nil {
+			close(toolStream)
+		}
 		return promptResultMsg{result: result, err: err}
 	}
 }
@@ -482,4 +548,89 @@ func isExitCommand(input string) bool {
 	default:
 		return false
 	}
+}
+
+func formatToolEvent(event providertypes.ToolEvent) string {
+	kind := strings.TrimSpace(strings.ToUpper(event.Kind))
+	if kind == "" {
+		kind = "EVENT"
+	}
+	tool := strings.TrimSpace(event.Tool)
+	if tool == "" {
+		tool = "unknown"
+	}
+	payload := strings.TrimSpace(event.Payload)
+	if payload == "" {
+		payload = "(no payload)"
+	}
+	duration := ""
+	if strings.EqualFold(kind, "RESULT") {
+		duration = fmt.Sprintf("\nduration: %dms", event.DurationMs)
+	}
+
+	return fmt.Sprintf("%s: %s\n%s%s", kind, tool, payload, duration)
+}
+
+func (m *model) appendOrMergeToolEvent(event providertypes.ToolEvent) {
+	kind := strings.TrimSpace(strings.ToLower(event.Kind))
+	formatted := formatToolEvent(event)
+
+	if kind == "call" {
+		m.messages = append(m.messages, chatMessage{role: "tool", content: formatted})
+		m.pendingToolMessageIndex = len(m.messages) - 1
+		return
+	}
+
+	if kind == "result" && m.pendingToolMessageIndex >= 0 && m.pendingToolMessageIndex < len(m.messages) {
+		pending := &m.messages[m.pendingToolMessageIndex]
+		if pending.role == "tool" {
+			pending.content = strings.TrimSpace(pending.content) + "\n\n" + formatted
+			m.pendingToolMessageIndex = -1
+			return
+		}
+	}
+
+	m.messages = append(m.messages, chatMessage{role: "tool", content: formatted})
+	m.pendingToolMessageIndex = -1
+}
+
+func waitToolEventCmd(stream <-chan providertypes.ToolEvent) tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-stream
+		if !ok {
+			return toolEventStreamClosedMsg{}
+		}
+
+		return toolEventMsg{event: event, stream: stream}
+	}
+}
+
+func mergeToolEvents(events []providertypes.ToolEvent) []string {
+	if len(events) == 0 {
+		return nil
+	}
+
+	blocks := make([]string, 0, len(events))
+	lastCallIndex := -1
+	for _, event := range events {
+		kind := strings.TrimSpace(strings.ToLower(event.Kind))
+		switch kind {
+		case "call":
+			blocks = append(blocks, formatToolEvent(event))
+			lastCallIndex = len(blocks) - 1
+		case "result":
+			resultText := formatToolEvent(event)
+			if lastCallIndex >= 0 {
+				blocks[lastCallIndex] = blocks[lastCallIndex] + "\n\n" + resultText
+				lastCallIndex = -1
+				continue
+			}
+			blocks = append(blocks, resultText)
+		default:
+			blocks = append(blocks, formatToolEvent(event))
+			lastCallIndex = -1
+		}
+	}
+
+	return blocks
 }

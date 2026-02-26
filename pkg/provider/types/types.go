@@ -8,10 +8,19 @@ type PromptResult struct {
 
 // PromptMetadata carries provider/model identity and optional usage accounting.
 type PromptMetadata struct {
-	Provider string
-	Model    string
-	Agent    string
-	Usage    *TokenUsage
+	Provider   string
+	Model      string
+	Agent      string
+	Usage      *TokenUsage
+	ToolEvents []ToolEvent
+}
+
+// ToolEvent captures one tool call/result event emitted during a prompt.
+type ToolEvent struct {
+	Kind       string
+	Tool       string
+	Payload    string
+	DurationMs int64
 }
 
 // TokenUsage captures token accounting across providers.

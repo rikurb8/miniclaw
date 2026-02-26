@@ -172,6 +172,22 @@ func TestPromptResultMetadataIncludesUsage(t *testing.T) {
 	}
 }
 
+func TestPromptResultMetadataIncludesToolEvents(t *testing.T) {
+	metadata := PromptResultMetadata(providertypes.PromptResult{
+		Text: "hello",
+		Metadata: providertypes.PromptMetadata{
+			ToolEvents: []providertypes.ToolEvent{
+				{Kind: "call", Tool: "read_file", Payload: `{"path":"notes.txt"}`},
+				{Kind: "result", Tool: "read_file", Payload: "ok"},
+			},
+		},
+	})
+
+	if got := metadata[ToolEventsJSONKey]; got == "" {
+		t.Fatal("expected tool events payload")
+	}
+}
+
 func TestPromptResultFromOutboundParsesUsage(t *testing.T) {
 	result := PromptResultFromOutbound(bus.OutboundMessage{
 		Content: "answer",
@@ -190,6 +206,22 @@ func TestPromptResultFromOutboundParsesUsage(t *testing.T) {
 	}
 	if result.Metadata.Usage.TotalTokens != 33 {
 		t.Fatalf("total tokens = %d, want 33", result.Metadata.Usage.TotalTokens)
+	}
+}
+
+func TestPromptResultFromOutboundParsesToolEvents(t *testing.T) {
+	result := PromptResultFromOutbound(bus.OutboundMessage{
+		Content: "answer",
+		Metadata: map[string]string{
+			ToolEventsJSONKey: `[{"kind":"call","tool":"write_file","payload":"{}"}]`,
+		},
+	})
+
+	if len(result.Metadata.ToolEvents) != 1 {
+		t.Fatalf("tool event length = %d, want 1", len(result.Metadata.ToolEvents))
+	}
+	if got := result.Metadata.ToolEvents[0].Tool; got != "write_file" {
+		t.Fatalf("tool = %q, want %q", got, "write_file")
 	}
 }
 

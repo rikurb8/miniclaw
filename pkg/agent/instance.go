@@ -29,6 +29,7 @@ type Instance struct {
 type queuedPrompt struct {
 	prompt   string
 	resultCh chan promptResult
+	ctx      context.Context
 }
 
 type promptResult struct {
@@ -103,12 +104,12 @@ func (i *Instance) HeartbeatEnabled() bool {
 }
 
 func (i *Instance) EnqueuePrompt(prompt string) {
-	i.enqueuePrompt(prompt, nil)
+	i.enqueuePrompt(context.Background(), prompt, nil)
 }
 
 func (i *Instance) EnqueueAndWait(ctx context.Context, prompt string) (providertypes.PromptResult, error) {
 	resultCh := make(chan promptResult, 1)
-	if err := i.enqueuePrompt(prompt, resultCh); err != nil {
+	if err := i.enqueuePrompt(ctx, prompt, resultCh); err != nil {
 		return providertypes.PromptResult{}, err
 	}
 
@@ -120,16 +121,19 @@ func (i *Instance) EnqueueAndWait(ctx context.Context, prompt string) (providert
 	}
 }
 
-func (i *Instance) enqueuePrompt(prompt string, resultCh chan promptResult) error {
+func (i *Instance) enqueuePrompt(promptCtx context.Context, prompt string, resultCh chan promptResult) error {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return errors.New("prompt cannot be empty")
+	}
+	if promptCtx == nil {
+		promptCtx = context.Background()
 	}
 
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	i.queue = append(i.queue, queuedPrompt{prompt: prompt, resultCh: resultCh})
+	i.queue = append(i.queue, queuedPrompt{prompt: prompt, resultCh: resultCh, ctx: promptCtx})
 	if i.heartbeat.Enabled {
 		select {
 		case i.queueWake <- struct{}{}:

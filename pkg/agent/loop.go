@@ -44,7 +44,12 @@ func (i *Instance) processQueuedPrompts(ctx context.Context) error {
 			return nil
 		}
 
-		result, err := i.Prompt(ctx, item.prompt)
+		promptCtx := item.ctx
+		if promptCtx == nil {
+			promptCtx = ctx
+		}
+
+		result, err := i.Prompt(promptCtx, item.prompt)
 		if item.resultCh != nil {
 			item.resultCh <- promptResult{result: result, err: err}
 		}
